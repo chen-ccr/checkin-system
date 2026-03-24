@@ -1,0 +1,16 @@
+
+services:
+  server:
+    build: ./server
+    ports:
+      - "3001:3000"
+
+  admin:
+    build: ./admin
+    ports:
+      - "8090:80"
+
+  h5:
+    build: ./h5
+    ports:
+      - "8091:80"
