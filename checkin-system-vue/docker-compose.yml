@@ -1,16 +1,35 @@
+version: "3.9"
 
 services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: checkin
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
   server:
     build: ./server
     ports:
-      - "3001:3000"
+      - "3001:3001"
+    depends_on:
+      - mysql
+
+  h5:
+    build: ./h5
+    ports:
+      - "8091:80"
+    # 保存刷新
+    volumes:
+      - ./h5:/usr/share/nginx/html
 
   admin:
     build: ./admin
     ports:
       - "8090:80"
 
-  h5:
-    build: ./h5
-    ports:
-      - "8091:80"
+volumes:
+  mysql_data:

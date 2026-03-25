@@ -1,6 +1,7 @@
 {
   "name": "h5",
   "scripts": {
+    "dev": "vite",
     "build": "vite build"
   },
   "dependencies": {
