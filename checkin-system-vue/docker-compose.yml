@@ -25,6 +25,7 @@ services:
       DB_NAME: ${DB_NAME:-checkin}
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       SUPER_ADMIN_IDS: ${SUPER_ADMIN_IDS:-test123}
+      TEST_MODE: ${TEST_MODE:-false}
     ports:
       - "${SERVER_PORT:-3001}:3001"
     depends_on:

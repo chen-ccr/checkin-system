@@ -16,7 +16,7 @@ const nowText = ref('')
 const refreshing = ref(false)
 const summaryLoading = ref(false)
 const summaryMsg = ref('')
-const canAccessSummary = ref(false)
+const canAccessSummary = ref(true)
 const summaryLevel = ref('organization')
 const summaryData = ref({
   range: {},

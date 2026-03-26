@@ -15,3 +15,6 @@ bash scripts/smoke-test.sh
 
 6、故障回滚
 bash scripts/rollback.sh
+
+7、h5构建
+docker compose up --build h5
