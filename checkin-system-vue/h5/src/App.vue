@@ -15,6 +15,8 @@ const loading = ref(false)
 const syncMsg = ref('')
 const nowText = ref('')
 const refreshing = ref(false)
+const offlineQueueDisplay = ref(false)
+const offlineQueuePreview = ref([])
 const summaryLoading = ref(false)
 const summaryMsg = ref('')
 const canAccessSummary = ref(true)
@@ -146,10 +148,20 @@ async function syncOfflineQueue() {
     syncMsg.value = ''
     return
   }
+
+  // 先展示离线队列
+  offlineQueuePreview.value = queue
+  offlineQueueDisplay.value = true
+
+  // 延迟200ms后执行实际上传
+  await new Promise(r => setTimeout(r, 200))
+
   try {
     const res = await api.post('/checkins/offline', { items: queue })
     if (res.data.code === 'OK') {
       setQueue([])
+      offlineQueuePreview.value = []
+      offlineQueueDisplay.value = false
       syncMsg.value = `离线补传成功，共 ${queue.length} 条`
       await loadPlan()
       await loadHistory()
@@ -159,6 +171,11 @@ async function syncOfflineQueue() {
   } catch (_err) {
     syncMsg.value = '网络未恢复，离线记录待补传'
   }
+}
+
+function closeOfflineQueue() {
+  offlineQueueDisplay.value = false
+  offlineQueuePreview.value = []
 }
 
 async function refreshAll() {
@@ -397,6 +414,22 @@ onUnmounted(() => {
         <p class="hint" v-if="!canAccessSummary">当前账号无考勤汇总权限</p>
         <div v-if="msg" class="result-msg" :class="{ error: msg.includes('失败') || msg.includes('异常') }">{{ msg }}</div>
 
+        <!-- 离线队列展示弹窗 -->
+        <div v-if="offlineQueueDisplay" class="offline-queue-modal">
+          <div class="offline-queue-content">
+            <h3>离线队列数据</h3>
+            <ul>
+              <li v-for="(item, index) in offlineQueuePreview" :key="index">
+                <div class="row-main">
+                  <span>{{ item.punchedAt }}</span>
+                  <span>{{ item.lat }}, {{ item.lng }}</span>
+                </div>
+              </li>
+            </ul>
+            <button class="btn-close" @click="closeOfflineQueue">关闭</button>
+          </div>
+        </div>
+
         <div class="panel">
           <h3>今日应打卡节点</h3>
           <ul>
@@ -470,14 +503,32 @@ onUnmounted(() => {
           <p class="error-text" v-if="summaryMsg">{{ summaryMsg }}</p>
 
           <div class="chart-box" v-if="summaryLevel !== 'user' && summaryData.bars.length">
-            <div class="chart-grid"></div>
-            <div class="chart-list">
-              <div class="chart-item" v-for="item in summaryData.bars" :key="item.id">
-                <div class="bars">
-                  <div class="bar expected" :style="{ height: barHeight(item.expected) }"></div>
-                  <div class="bar actual" :style="{ height: barHeight(item.actual) }"></div>
+            <div class="chart-wrapper">
+              <div class="y-axis">
+                <span>{{ chartMax }}</span>
+                <span>{{ Math.round(chartMax * 0.75) }}</span>
+                <span>{{ Math.round(chartMax * 0.5) }}</span>
+                <span>{{ Math.round(chartMax * 0.25) }}</span>
+                <span>0</span>
+              </div>
+              <div class="chart-area">
+                <div class="chart-list">
+                  <div class="chart-item" v-for="item in summaryData.bars" :key="item.id">
+                    <div class="bar-values-top">
+                      <span>{{ item.actual }}</span>
+                      <span>{{ item.expected }}</span>
+                    </div>
+                    <div class="bars">
+                      <div class="bar expected" :style="{ height: barHeight(item.expected) }"></div>
+                      <div class="bar actual" :style="{ height: barHeight(item.actual) }"></div>
+                    </div>
+                  </div>
                 </div>
-                <div class="chart-label">{{ item.name }}</div>
+                <div class="x-axis">
+                  <div class="chart-item" v-for="item in summaryData.bars" :key="item.id">
+                    <div class="chart-label">{{ item.name }}</div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="legend">
@@ -492,7 +543,7 @@ onUnmounted(() => {
             <li v-for="row in summaryData.rows" :key="row.id" class="click-row" @click="summaryLevel === 'organization' ? openDepartment(row) : openUser(row)">
               <div class="row-main">
                 <span>{{ row.name }}</span>
-                <span>{{ row.actual }}/{{ row.expected }} <strong class="arrow">›</strong></span>
+                <span>实到 {{ row.actual }}/{{ row.expected }} <strong class="arrow">›</strong></span>
               </div>
             </li>
           </ul>
@@ -536,7 +587,7 @@ onUnmounted(() => {
 .btn-entry { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 10px 12px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
 .btn-checkin:disabled, .btn-second:disabled, .btn-entry:disabled, .btn-ghost:disabled { opacity: 0.65; }
 .result-msg { margin: 8px 0; padding: 8px 10px; background: #ecfdf3; color: #14532d; border-radius: 6px; border: 1px solid #bbf7d0; }
-.hint { margin: 6px 0; color: #334155; font-size: 12px; }
+.hint { margin: 12px 0 6px; color: #334155; font-size: 12px; padding-top: 12px; border-top: 1px dashed #e2e8f0; }
 .error { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
 .error-text { margin: 6px 0; color: #dc2626; }
 .panel { margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #fff; }
@@ -550,15 +601,20 @@ onUnmounted(() => {
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 input, button { font-size: 14px; }
 input { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; }
-.chart-box { margin-top: 8px; padding: 8px 0 0; }
-.chart-grid { height: 140px; border-left: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; position: relative; }
-.chart-list { margin-top: -140px; height: 140px; display: flex; justify-content: space-around; align-items: flex-end; gap: 12px; padding: 0 8px; }
-.chart-item { width: 72px; text-align: center; }
-.bars { display: flex; justify-content: center; align-items: flex-end; gap: 6px; height: 140px; }
+.chart-box { margin-top: 8px; padding-top: 12px; border-top: 1px dashed #e2e8f0; }
+.chart-wrapper { display: flex; min-height: 200px; }
+.y-axis { width: 35px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: #64748b; text-align: right; padding-right: 8px; border-right: 1px solid #cbd5e1; }
+.chart-area { flex: 1; display: flex; flex-direction: column; }
+.chart-list { flex: 1; display: flex; justify-content: space-around; align-items: flex-end; padding-bottom: 0; border-bottom: 1px solid #cbd5e1; min-height: 160px; }
+.chart-item { width: 72px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+.bars { display: flex; justify-content: center; align-items: flex-end; gap: 4px; height: 140px; }
 .bar { width: 18px; border-radius: 6px 6px 0 0; }
 .bar.expected { background: #3b82f6; }
 .bar.actual { background: #22c55e; }
-.chart-label { margin-top: 6px; font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-values-top { display: flex; justify-content: center; gap: 4px; font-size: 10px; color: #475569; margin-bottom: 2px; }
+.x-axis { display: flex; justify-content: space-around; padding: 8px 0 4px; }
+.x-axis .chart-item { width: 72px; }
+.chart-label { font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .legend { display: flex; gap: 12px; margin-top: 8px; color: #475569; font-size: 12px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .dot.expected { background: #3b82f6; }
@@ -575,4 +631,9 @@ li:last-child { margin-bottom: 0; border-bottom: 0; padding-bottom: 0; }
 .arrow { color: #94a3b8; }
 .done { color: #14532d; }
 .abnormal { color: #b45309; }
+.offline-queue-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.offline-queue-content { background: #fff; border-radius: 12px; padding: 16px; max-width: 90%; max-height: 80%; overflow-y: auto; }
+.offline-queue-content h3 { margin: 0 0 12px; }
+.offline-queue-content ul { max-height: 300px; overflow-y: auto; }
+.offline-queue-content .btn-close { margin-top: 12px; width: 100%; background: #1677ff; color: #fff; border: none; padding: 10px; border-radius: 8px; }
 </style>

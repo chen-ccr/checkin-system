@@ -157,25 +157,67 @@ function clearFenceForm() {
 }
 
 function initFenceMap() {
-  if (fenceMap) return
+  console.log('initFenceMap called, fenceMap exists:', !!fenceMap)
+  console.log('window.AMap exists:', !!window.AMap)
+  console.log('fence-map element exists:', !!document.getElementById('fence-map'))
 
-  setTimeout(() => {
-    if (window.AMap && document.getElementById('fence-map')) {
+  if (fenceMap) {
+    console.log('fenceMap already exists, skipping')
+    return
+  }
+
+  let attempts = 0
+  const maxAttempts = 20
+
+  function tryInit() {
+    attempts++
+    console.log(`initFenceMap attempt ${attempts}/${maxAttempts}`)
+
+    const mapContainer = document.getElementById('fence-map')
+    if (!mapContainer) {
+      console.log('fence-map container not found')
+      return
+    }
+
+    console.log('fence-map container size:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight)
+    console.log('fence-map container display:', window.getComputedStyle(mapContainer).display)
+    console.log('fence-map container visibility:', window.getComputedStyle(mapContainer).visibility)
+
+    if (window.AMap && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
+      console.log('Initializing AMap...')
+
+      // 先清空容器
+      mapContainer.innerHTML = ''
+
       fenceMap = new AMap.Map('fence-map', {
         zoom: 15,
-        center: [115.89925, 28.68503]
+        center: [115.89925, 28.68503],
+        resizeEnable: true
       })
 
       fenceMap.on('click', (e) => {
         const { lng, lat } = e.lnglat
+        console.log('Map clicked:', lat, lng)
         fenceForm.value.lat = lat.toFixed(6)
         fenceForm.value.lng = lng.toFixed(6)
         updateFenceMap()
       })
 
       updateFenceMap()
+      console.log('AMap initialized successfully')
+    } else if (attempts < maxAttempts) {
+      console.log('Conditions not met, retrying...', {
+        hasAMap: !!window.AMap,
+        width: mapContainer.offsetWidth,
+        height: mapContainer.offsetHeight
+      })
+      setTimeout(tryInit, 500)
+    } else {
+      console.error('Failed to initialize AMap after max attempts')
     }
-  }, 500)
+  }
+
+  setTimeout(tryInit, 500)
 }
 
 function updateFenceMap() {
