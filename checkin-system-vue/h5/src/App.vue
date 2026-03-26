@@ -268,16 +268,22 @@ async function applySummaryFilter() {
 }
 
 async function checkFence(loc) {
-  const res = await api.post('/checkins/precheck', {
-    userId: user.value.userId,
-    lat: loc.lat,
-    lng: loc.lng
-  })
-  if (res.data.code !== 'OK') {
-    throw new Error(res.data.message || '围栏校验失败')
+  try {
+    const res = await api.post('/checkins/precheck', {
+      userId: user.value.userId,
+      lat: loc.lat,
+      lng: loc.lng
+    })
+    if (res.data.code !== 'OK') {
+      throw new Error(res.data.message || '围栏校验失败')
+    }
+    precheckMsg.value = `${res.data.data.fenceName}：${res.data.data.message}，偏移 ${res.data.data.distanceMeters}m`
+    return res.data.data
+  } catch (err) {
+    console.error('checkFence error:', err)
+    msg.value = err.message || '围栏校验失败'
+    throw err
   }
-  precheckMsg.value = `${res.data.data.fenceName}：${res.data.data.message}，偏移 ${res.data.data.distanceMeters}m`
-  return res.data.data
 }
 
 async function handleCheckin() {
@@ -290,9 +296,11 @@ async function handleCheckin() {
   msg.value = '正在定位并提交...'
   try {
     const loc = await getLocation()
+    console.log('定位成功:', loc)
     const precheck = await checkFence(loc)
     if (!precheck.inside) {
       msg.value = '当前位置不在打卡围栏内'
+      loading.value = false
       return
     }
     const payload = {
@@ -304,23 +312,18 @@ async function handleCheckin() {
     if (res.data.code === 'OK') {
       msg.value = `${res.data.message}（第${res.data.data.punchIndex}节点，${res.data.data.status}）`
       await refreshAll()
-      return
+    } else {
+      msg.value = res.data.message || '打卡失败'
     }
-    msg.value = res.data.message || '打卡失败'
-  } catch (_error) {
-    const loc = await getLocation()
-    const offlineItem = {
-      userId: user.value.userId,
-      lat: loc.lat,
-      lng: loc.lng,
-      punchedAt: new Date().toISOString(),
-      idempotencyKey: createIdempotencyKey({ userId: user.value.userId, punchedAt: new Date().toISOString() })
+  } catch (error) {
+    console.error('打卡失败:', error)
+    let errorMsg = '打卡失败，请稍后重试'
+    if (error.response?.data?.message) {
+      errorMsg = error.response.data.message
+    } else if (error.message) {
+      errorMsg = error.message
     }
-    const queue = getQueue()
-    queue.push(offlineItem)
-    setQueue(queue)
-    msg.value = '网络异常，已离线缓存，恢复网络后自动补传'
-    syncMsg.value = `待补传 ${queue.length} 条`
+    msg.value = errorMsg
   } finally {
     loading.value = false
   }
