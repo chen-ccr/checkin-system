@@ -201,7 +201,7 @@ async function runChecks({ baseUrl, h5Port, adminPort, record }) {
   const precheckRes = await fetch(`${baseUrl}/api/v1/checkins/precheck`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: 'staff001', lat: 26.5668, lng: 107.5173 })
+    body: JSON.stringify({ userId: 'staff001', lat: 26.5668, lng: 107.5173, punchIndex: 1 })
   })
   if (!precheckRes.ok) throw new Error(`围栏预检失败: ${precheckRes.status}`)
   record('围栏预检接口可用', 'PASS', { status: precheckRes.status })

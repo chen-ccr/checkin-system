@@ -26,6 +26,6 @@ for svc in server h5 admin; do
 done
 
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d --build
-"$ROOT_DIR/scripts/smoke-test.sh" "$ENV_FILE" docker
+bash "$ROOT_DIR/scripts/smoke-test.sh" "$ENV_FILE" docker
 
 echo "部署完成"

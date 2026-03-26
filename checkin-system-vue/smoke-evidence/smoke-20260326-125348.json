@@ -1,0 +1,77 @@
+{
+  "passed": true,
+  "mode": "local",
+  "startedAt": "2026-03-26T04:53:48.564Z",
+  "finishedAt": "2026-03-26T04:53:48.631Z",
+  "checks": [
+    {
+      "name": "本地冒烟服务启动",
+      "status": "PASS",
+      "detail": {
+        "apiPort": 59529,
+        "h5Port": 8091,
+        "adminPort": 8090
+      },
+      "at": "2026-03-26T04:53:48.573Z"
+    },
+    {
+      "name": "h5 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:53:48.592Z"
+    },
+    {
+      "name": "admin 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:53:48.593Z"
+    },
+    {
+      "name": "登录鉴权可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:53:48.601Z"
+    },
+    {
+      "name": "打卡计划接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:53:48.603Z"
+    },
+    {
+      "name": "受保护统计接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:53:48.604Z"
+    },
+    {
+      "name": "围栏预检接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:53:48.605Z"
+    },
+    {
+      "name": "xlsx双报表导出可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200,
+        "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "disposition": "attachment; filename=\"attendance-2026-05-01-2026-05-01.xlsx\"",
+        "worksheetCount": 2
+      },
+      "at": "2026-03-26T04:53:48.631Z"
+    }
+  ]
+}

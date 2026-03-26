@@ -1,5 +1,25 @@
 const { ROLE_CODES, PUNCH_MODEL, ABSENCE_TYPE, ABSENCE_STATUS } = require('../constants/domain')
 
+async function tableExists(db, tableName) {
+  const [rows] = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+    [tableName]
+  )
+  return Number(rows[0].total) > 0
+}
+
+async function hasColumn(db, tableName, columnName) {
+  const [rows] = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [tableName, columnName]
+  )
+  return Number(rows[0].total) > 0
+}
+
 async function migrate(db) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS departments (
@@ -75,6 +95,16 @@ async function migrate(db) {
       INDEX idx_absence_user_time(user_id, start_at, end_at)
     )
   `)
+
+  const checkinsExists = await tableExists(db, 'checkins')
+  if (checkinsExists) {
+    const hasBizDate = await hasColumn(db, 'checkins', 'biz_date')
+    const hasLegacyUserId = await hasColumn(db, 'checkins', 'userId')
+    if (!hasBizDate && hasLegacyUserId) {
+      const legacyName = `checkins_legacy_${Date.now()}`
+      await db.query(`RENAME TABLE checkins TO ${legacyName}`)
+    }
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS checkins (

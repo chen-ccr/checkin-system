@@ -1,0 +1,49 @@
+{
+  "passed": false,
+  "mode": "docker",
+  "startedAt": "2026-03-26T05:06:22.986Z",
+  "finishedAt": "2026-03-26T05:06:23.039Z",
+  "checks": [
+    {
+      "name": "h5 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T05:06:23.012Z"
+    },
+    {
+      "name": "admin 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T05:06:23.016Z"
+    },
+    {
+      "name": "登录鉴权可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T05:06:23.024Z"
+    },
+    {
+      "name": "打卡计划接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T05:06:23.028Z"
+    },
+    {
+      "name": "受保护统计接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T05:06:23.035Z"
+    }
+  ],
+  "error": "围栏预检失败: 422"
+}

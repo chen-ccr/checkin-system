@@ -1,0 +1,33 @@
+{
+  "passed": false,
+  "mode": "docker",
+  "startedAt": "2026-03-26T04:58:30.312Z",
+  "finishedAt": "2026-03-26T04:58:30.357Z",
+  "checks": [
+    {
+      "name": "h5 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:58:30.336Z"
+    },
+    {
+      "name": "admin 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:58:30.339Z"
+    },
+    {
+      "name": "登录鉴权可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T04:58:30.350Z"
+    }
+  ],
+  "error": "打卡计划失败: 500"
+}
