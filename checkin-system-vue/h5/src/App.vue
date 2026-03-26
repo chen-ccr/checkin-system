@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { ensureLogin } from './utils/auth'
 import { getLocation } from './utils/location'
+import axios from 'axios'
 
 const user = ref(null)
 const authToken = ref('')
@@ -34,7 +35,13 @@ const selectedDepartment = ref(null)
 const selectedUser = ref(null)
 
 const OFFLINE_KEY = 'checkin_offline_queue'
-const API_BASE = '/api/v1'
+
+// 和admin一样，使用相对路径 /api/v1
+const api = axios.create({ baseURL: '/api/v1' })
+
+console.log('=== App 初始化 ===')
+console.log('API_BASE: /api/v1 (使用nginx代理，和admin一样)')
+
 let timerId = null
 
 function getQueue() {
@@ -81,16 +88,8 @@ async function ensureSummaryToken() {
     throw new Error('用户未就绪，请稍后重试')
   }
   if (authToken.value) return authToken.value
-  const res = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: user.value.userId })
-  })
-  const data = await res.json()
-  if (!res.ok || data.code !== 'OK') {
-    throw new Error(data.message || '汇总鉴权失败')
-  }
-  authToken.value = data.data.token
+  const res = await api.post('/auth/login', { userId: user.value.userId })
+  authToken.value = res.data.data.token
   return authToken.value
 }
 
@@ -98,26 +97,47 @@ async function loadSummaryAccess() {
   summaryMsg.value = ''
   try {
     const token = await ensureSummaryToken()
-    const res = await fetch(`${API_BASE}/h5/attendance/access`, {
+    const res = await api.get('/h5/attendance/access', {
       headers: { Authorization: `Bearer ${token}` }
     })
-    const data = await res.json()
-    canAccessSummary.value = true//Boolean(data?.data?.canAccess)
+    canAccessSummary.value = true
   } catch (_error) {
     canAccessSummary.value = false
   }
 }
 
 async function loadPlan() {
-  const res = await fetch(`${API_BASE}/checkins/plan?userId=${encodeURIComponent(user.value.userId)}`)
-  const data = await res.json()
-  plan.value = data.data.nodes || []
+  console.log('📡 loadPlan 开始，userId:', user.value?.userId)
+  if (!user.value?.userId) {
+    console.error('❌ loadPlan: user.value 或 userId 为空')
+    return
+  }
+  try {
+    const res = await api.get('/checkins/plan', {
+      params: { userId: user.value.userId }
+    })
+    console.log('📡 loadPlan 返回:', res.data)
+    plan.value = res.data.data.nodes || []
+  } catch (err) {
+    console.error('❌ loadPlan 错误:', err)
+  }
 }
 
 async function loadHistory() {
-  const res = await fetch(`${API_BASE}/checkins/history?userId=${encodeURIComponent(user.value.userId)}&limit=20`)
-  const data = await res.json()
-  history.value = data.data.records || []
+  console.log('📡 loadHistory 开始')
+  if (!user.value?.userId) {
+    console.error('❌ loadHistory: user.value 或 userId 为空')
+    return
+  }
+  try {
+    const res = await api.get('/checkins/history', {
+      params: { userId: user.value.userId, limit: 20 }
+    })
+    console.log('📡 loadHistory 返回:', res.data)
+    history.value = res.data.data.records || []
+  } catch (err) {
+    console.error('❌ loadHistory 错误:', err)
+  }
 }
 
 async function syncOfflineQueue() {
@@ -127,13 +147,8 @@ async function syncOfflineQueue() {
     return
   }
   try {
-    const res = await fetch(`${API_BASE}/checkins/offline`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: queue })
-    })
-    const data = await res.json()
-    if (data.code === 'OK') {
+    const res = await api.post('/checkins/offline', { items: queue })
+    if (res.data.code === 'OK') {
       setQueue([])
       syncMsg.value = `离线补传成功，共 ${queue.length} 条`
       await loadPlan()
@@ -159,16 +174,16 @@ async function refreshAll() {
 }
 
 function buildSummaryQuery() {
-  const params = new URLSearchParams()
-  params.set('mode', summaryMode.value)
+  const params = {}
+  params.mode = summaryMode.value
   if (summaryMode.value === 'custom') {
-    if (customStartDate.value) params.set('startDate', customStartDate.value)
-    if (customEndDate.value) params.set('endDate', customEndDate.value)
+    if (customStartDate.value) params.startDate = customStartDate.value
+    if (customEndDate.value) params.endDate = customEndDate.value
   } else if (summaryDate.value) {
-    params.set('date', summaryDate.value)
+    params.date = summaryDate.value
   }
-  if (selectedDepartment.value?.id) params.set('departmentId', String(selectedDepartment.value.id))
-  if (selectedUser.value?.id) params.set('userId', String(selectedUser.value.id))
+  if (selectedDepartment.value?.id) params.departmentId = String(selectedDepartment.value.id)
+  if (selectedUser.value?.id) params.userId = String(selectedUser.value.id)
   return params
 }
 
@@ -178,18 +193,13 @@ async function loadSummary() {
   summaryMsg.value = ''
   try {
     const token = await ensureSummaryToken()
-    const query = buildSummaryQuery()
-    const res = await fetch(`${API_BASE}/h5/attendance/summary?${query.toString()}`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
+    const params = buildSummaryQuery()
+    const res = await api.get('/h5/attendance/summary', {
+      params,
+      headers: { Authorization: `Bearer ${token}` }
     })
-    const data = await res.json()
-    if (!res.ok || data.code !== 'OK') {
-      throw new Error(data.message || '考勤汇总加载失败')
-    }
-    summaryData.value = data.data
-    summaryLevel.value = data.data.level || 'organization'
+    summaryData.value = res.data.data
+    summaryLevel.value = res.data.data.level || 'organization'
   } catch (error) {
     summaryMsg.value = error.message || '考勤汇总加载失败'
   } finally {
@@ -241,21 +251,16 @@ async function applySummaryFilter() {
 }
 
 async function checkFence(loc) {
-  const res = await fetch(`${API_BASE}/checkins/precheck`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userId: user.value.userId,
-      lat: loc.lat,
-      lng: loc.lng
-    })
+  const res = await api.post('/checkins/precheck', {
+    userId: user.value.userId,
+    lat: loc.lat,
+    lng: loc.lng
   })
-  const data = await res.json()
-  if (data.code !== 'OK') {
-    throw new Error(data.message || '围栏校验失败')
+  if (res.data.code !== 'OK') {
+    throw new Error(res.data.message || '围栏校验失败')
   }
-  precheckMsg.value = `${data.data.fenceName}：${data.data.message}，偏移 ${data.data.distanceMeters}m`
-  return data.data
+  precheckMsg.value = `${res.data.data.fenceName}：${res.data.data.message}，偏移 ${res.data.data.distanceMeters}m`
+  return res.data.data
 }
 
 async function handleCheckin() {
@@ -278,18 +283,13 @@ async function handleCheckin() {
       lat: loc.lat,
       lng: loc.lng
     }
-    const res = await fetch(`${API_BASE}/checkins`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    const data = await res.json()
-    if (data.code === 'OK') {
-      msg.value = `${data.message}（第${data.data.punchIndex}节点，${data.data.status}）`
+    const res = await api.post('/checkins', payload)
+    if (res.data.code === 'OK') {
+      msg.value = `${res.data.message}（第${res.data.data.punchIndex}节点，${res.data.data.status}）`
       await refreshAll()
       return
     }
-    msg.value = data.message || '打卡失败'
+    msg.value = res.data.message || '打卡失败'
   } catch (_error) {
     const loc = await getLocation()
     const offlineItem = {
@@ -310,15 +310,25 @@ async function handleCheckin() {
 }
 
 onMounted(async () => {
-  user.value = await ensureLogin()
-  setDefaultCustomRange()
-  await refreshAll()
-  await loadSummaryAccess()
+  console.log('🚀 App onMounted 开始')
+  try {
+    user.value = await ensureLogin()
+    console.log('✅ 用户信息已获取:', user.value)
+    setDefaultCustomRange()
+    console.log('📡 开始 refreshAll')
+    await refreshAll()
+    console.log('✅ refreshAll 完成')
+    await loadSummaryAccess()
+    console.log('✅ loadSummaryAccess 完成')
+  } catch (err) {
+    console.error('❌ onMounted 错误:', err)
+  }
   window.addEventListener('online', syncOfflineQueue)
   nowText.value = new Date().toLocaleString()
   timerId = setInterval(() => {
     nowText.value = new Date().toLocaleString()
   }, 1000)
+  console.log('✅ App onMounted 完成')
 })
 
 onUnmounted(() => {
