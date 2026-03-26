@@ -1,8 +1,17 @@
-1、docker compose up --build 先build docker
-docker compose build --no-cache
+1、进入项目目录
+cd /Users/ccr/test/checkin-system-vue
 
-2、docker compose up 启动docker
-3、docker ps 查看docker状态
-4、docker compose down 关闭docker
-5、组合命令docker compose build --no-cache server && docker compose up server
-6、docker compose restart server 重启
+2、初始化环境变量
+bash scripts/init-env.sh
+
+3、执行质量门禁（测试+构建）
+bash scripts/quality-gate.sh
+
+4、一键启动（含部署与冒烟）
+bash scripts/one-click-start.sh
+
+5、仅冒烟验证
+bash scripts/smoke-test.sh
+
+6、故障回滚
+bash scripts/rollback.sh

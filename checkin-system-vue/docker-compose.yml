@@ -1,35 +1,50 @@
-version: "3.9"
-
 services:
   mysql:
     image: mysql:8
     environment:
-      MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_DATABASE: checkin
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: ${DB_NAME:-checkin}
     ports:
-      - "3307:3306"
+      - "${DB_PORT_EXPOSE:-3307}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${DB_PASSWORD:-123456}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   server:
     build: ./server
+    image: checkin-server:${IMAGE_TAG:-latest}
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-123456}
+      DB_NAME: ${DB_NAME:-checkin}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      SUPER_ADMIN_IDS: ${SUPER_ADMIN_IDS:-test123}
     ports:
-      - "3001:3001"
+      - "${SERVER_PORT:-3001}:3001"
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
 
   h5:
     build: ./h5
+    image: checkin-h5:${IMAGE_TAG:-latest}
     ports:
-      - "8091:80"
-    # 保存刷新
-    volumes:
-      - ./h5:/usr/share/nginx/html
+      - "${H5_PORT:-8091}:80"
+    restart: unless-stopped
 
   admin:
     build: ./admin
+    image: checkin-admin:${IMAGE_TAG:-latest}
     ports:
-      - "8090:80"
+      - "${ADMIN_PORT:-8090}:80"
+    restart: unless-stopped
 
 volumes:
   mysql_data:

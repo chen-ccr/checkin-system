@@ -1,5 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const ExcelJS = require('exceljs')
 const AttendanceService = require('../src/services/attendanceService')
 
 function createFakeRepository() {
@@ -36,7 +37,9 @@ function createFakeRepository() {
         punch_index: payload.punchIndex,
         punched_at: payload.punchedAt,
         late_minutes: payload.lateMinutes,
-        idempotency_key: payload.idempotencyKey
+        idempotency_key: payload.idempotencyKey,
+        is_offline: payload.isOffline ? 1 : 0,
+        distance_meters: payload.distanceMeters
       })
       return id
     },
@@ -47,6 +50,38 @@ function createFakeRepository() {
     createUploadAudit: async (payload) => state.audios.push(payload),
     listDailyCheckins: async (bizDate) => state.checkins.filter((item) => item.biz_date === bizDate),
     listActiveUsers: async () => state.users,
+    listUsers: async () =>
+      state.users.map((item) => ({
+        ...item,
+        department_id: 1,
+        department_name: '融媒体中心',
+        role_name: '工作人员',
+        is_active: 1
+      })),
+    listDepartments: async () => [{ id: 1, name: '融媒体中心' }],
+    listRoles: async () => [{ id: 1, code: 'STAFF', name: '工作人员', punch_model: 'FOUR' }],
+    listGeofences: async () => state.fences,
+    listShiftRules: async () => state.rules.map((item) => ({ ...item, role_name: '工作人员' })),
+    findUserWithRoleById: async (userId) =>
+      state.users.find((item) => item.id === userId)
+        ? { id: userId, name: '工作人员甲', department_id: 1, role_code: 'STAFF', is_active: 1 }
+        : null,
+    createUser: async () => {},
+    updateUser: async () => {},
+    createGeofence: async () => {},
+    updateGeofence: async () => {},
+    upsertShiftRule: async () => {},
+    listCheckinsByRange: async () =>
+      state.checkins.map((item) => ({
+        ...item,
+        user_name: '工作人员甲',
+        department_name: '融媒体中心',
+        role_code: 'STAFF',
+        is_offline: item.is_offline || 0,
+        distance_meters: item.distance_meters || (item.is_offline ? 260 : 10)
+      })),
+    listApprovedAbsencesInRange: async () => [],
+    listUserCheckins: async (userId) => state.checkins.filter((item) => item.user_id === userId),
     listApprovedAbsencesCoveringDate: async (bizDate) =>
       state.absences
         .filter((item) => item.status === 'APPROVED' && item.start_at.slice(0, 10) <= bizDate && item.end_at.slice(0, 10) >= bizDate)
@@ -106,4 +141,53 @@ test('请假数据并入统计后不计缺卡', async () => {
   const stats = await service.getDailyStats('2026-05-02')
   assert.equal(stats.leave, 1)
   assert.equal(stats.missing, 0)
+})
+
+test('H5可查询当日节点并返回历史记录', async () => {
+  const service = new AttendanceService(createFakeRepository())
+  await service.submitCheckin({
+    userId: 'staff001',
+    lat: 26.5668,
+    lng: 107.5173,
+    punchedAt: '2026-05-01T08:10:00'
+  })
+  const plan = await service.getUserTodayPlan('staff001', '2026-05-01')
+  const history = await service.getUserHistory('staff001', 10)
+  assert.equal(plan.nodes.length, 4)
+  assert.equal(plan.nodes[0].checked, true)
+  assert.equal(history.records.length, 1)
+})
+
+test('围栏预检可返回偏移与可打卡状态', async () => {
+  const service = new AttendanceService(createFakeRepository())
+  const result = await service.precheckLocation({
+    userId: 'staff001',
+    lat: 26.5668,
+    lng: 107.5173,
+    punchedAt: '2026-05-01T08:10:00'
+  })
+  assert.equal(result.inside, true)
+  assert.equal(result.punchIndex, 1)
+})
+
+test('导出报表为双sheet xlsx并高亮异常', async () => {
+  const service = new AttendanceService(createFakeRepository())
+  await service.submitCheckin({
+    userId: 'staff001',
+    lat: 26.5668,
+    lng: 107.5173,
+    punchedAt: '2026-05-01T08:35:00',
+    isOffline: true
+  })
+  const exported = await service.exportDashboard({ role: 'SUPER_ADMIN', departmentId: 1 }, { mode: 'day', date: '2026-05-01' })
+  assert.equal(exported.fileName.endsWith('.xlsx'), true)
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(exported.content)
+  assert.equal(workbook.worksheets.length, 2)
+  assert.equal(workbook.getWorksheet('汇总报表').name, '汇总报表')
+  const detailSheet = workbook.getWorksheet('明细报表')
+  assert.equal(detailSheet.getRow(1).getCell(1).value, '日期')
+  assert.equal(detailSheet.getRow(2).getCell(11).value.includes('迟到'), true)
+  assert.equal(detailSheet.getRow(2).getCell(11).value.includes('离线上传'), true)
+  assert.equal(detailSheet.getRow(2).getCell(11).fill.fgColor.argb, 'FFEF4444')
 })

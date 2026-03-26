@@ -3,13 +3,16 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node app.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:unit": "node --test test/ruleEngine.test.js test/time.test.js test/attendanceService.test.js",
+    "test:integration": "node --test test/v1.integration.test.js"
   },
   "dependencies": {
     "express": "^4",
     "cors": "^2",
     "jsonwebtoken": "^9",
     "dayjs": "^1",
+    "exceljs": "^4.4.0",
     "mysql2": "^3",
     "body-parser": "^1"
   }

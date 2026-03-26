@@ -14,6 +14,18 @@ class AttendanceRepository {
     return rows[0] || null
   }
 
+  async findUserWithRoleById(userId) {
+    const [rows] = await this.db.query(
+      `SELECT u.id, u.name, u.department_id, u.role_id, u.is_active, r.code AS role_code, r.name AS role_name
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+       WHERE u.id=?
+       LIMIT 1`,
+      [userId]
+    )
+    return rows[0] || null
+  }
+
   async findShiftRulesByRoleId(roleId) {
     const [rows] = await this.db.query(
       `SELECT id, role_id, punch_index, start_time, end_time, winter_start_time, required_fence_id
@@ -21,6 +33,18 @@ class AttendanceRepository {
        WHERE role_id=?
        ORDER BY punch_index ASC`,
       [roleId]
+    )
+    return rows
+  }
+
+  async listShiftRules() {
+    const [rows] = await this.db.query(
+      `SELECT rsr.id, rsr.role_id, rsr.punch_index, rsr.start_time, rsr.end_time, rsr.winter_start_time, rsr.required_fence_id,
+              r.code AS role_code, r.name AS role_name, gf.name AS fence_name
+       FROM role_shift_rules rsr
+       JOIN roles r ON r.id = rsr.role_id
+       LEFT JOIN geofences gf ON gf.id = rsr.required_fence_id
+       ORDER BY rsr.role_id ASC, rsr.punch_index ASC`
     )
     return rows
   }
@@ -33,6 +57,15 @@ class AttendanceRepository {
   async findFenceByName(name) {
     const [rows] = await this.db.query('SELECT id, name, lat, lng, radius, is_active FROM geofences WHERE name=? LIMIT 1', [name])
     return rows[0] || null
+  }
+
+  async listGeofences() {
+    const [rows] = await this.db.query(
+      `SELECT id, name, lat, lng, radius, is_active
+       FROM geofences
+       ORDER BY id ASC`
+    )
+    return rows
   }
 
   async findCheckinBySlot(userId, bizDate, punchIndex) {
@@ -119,6 +152,46 @@ class AttendanceRepository {
     return rows
   }
 
+  async listUserCheckins(userId, limit = 30) {
+    const [rows] = await this.db.query(
+      `SELECT c.id, c.biz_date, c.punch_index, c.punched_at, c.status, c.late_minutes, c.distance_meters, c.is_offline,
+              gf.name AS fence_name
+       FROM checkins c
+       LEFT JOIN geofences gf ON gf.id = c.fence_id
+       WHERE c.user_id=?
+       ORDER BY c.punched_at DESC
+       LIMIT ?`,
+      [userId, Number(limit)]
+    )
+    return rows
+  }
+
+  async listCheckinsByRange(payload) {
+    const params = [payload.startDate, payload.endDate]
+    const conditions = ['c.biz_date BETWEEN ? AND ?']
+    if (payload.departmentId) {
+      conditions.push('u.department_id=?')
+      params.push(payload.departmentId)
+    }
+    if (payload.userId) {
+      conditions.push('u.id=?')
+      params.push(payload.userId)
+    }
+    const [rows] = await this.db.query(
+      `SELECT c.id, c.user_id, c.biz_date, c.punch_index, c.punched_at, c.status, c.late_minutes, c.distance_meters, c.is_offline,
+              u.name AS user_name, u.department_id, d.name AS department_name, r.code AS role_code, gf.name AS fence_name
+       FROM checkins c
+       JOIN users u ON u.id = c.user_id
+       JOIN departments d ON d.id = u.department_id
+       JOIN roles r ON r.id = u.role_id
+       LEFT JOIN geofences gf ON gf.id = c.fence_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY c.biz_date DESC, c.user_id ASC, c.punch_index ASC`,
+      params
+    )
+    return rows
+  }
+
   async listActiveUsers() {
     const [rows] = await this.db.query(
       `SELECT u.id, u.name, u.department_id, u.role_id, r.code AS role_code, r.punch_model
@@ -129,6 +202,90 @@ class AttendanceRepository {
     return rows
   }
 
+  async listUsers(payload = {}) {
+    const params = []
+    const conditions = ['1=1']
+    if (typeof payload.departmentId === 'number') {
+      conditions.push('u.department_id=?')
+      params.push(payload.departmentId)
+    }
+    if (payload.onlyActive) {
+      conditions.push('u.is_active=1')
+    }
+    const [rows] = await this.db.query(
+      `SELECT u.id, u.name, u.department_id, d.name AS department_name, u.role_id, r.code AS role_code, r.name AS role_name, u.is_active, u.created_at
+       FROM users u
+       JOIN departments d ON d.id = u.department_id
+       JOIN roles r ON r.id = u.role_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY u.created_at DESC`,
+      params
+    )
+    return rows
+  }
+
+  async createUser(payload) {
+    await this.db.query(
+      `INSERT INTO users (id, name, department_id, role_id, is_active)
+       VALUES (?, ?, ?, ?, ?)`,
+      [payload.id, payload.name, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0]
+    )
+  }
+
+  async updateUser(payload) {
+    await this.db.query(
+      `UPDATE users
+       SET name=?, department_id=?, role_id=?, is_active=?
+       WHERE id=?`,
+      [payload.name, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0, payload.id]
+    )
+  }
+
+  async listDepartments() {
+    const [rows] = await this.db.query(
+      `SELECT id, name
+       FROM departments
+       ORDER BY id ASC`
+    )
+    return rows
+  }
+
+  async listRoles() {
+    const [rows] = await this.db.query(
+      `SELECT r.id, r.code, r.name, r.punch_model, r.default_fence_id, gf.name AS default_fence_name
+       FROM roles r
+       LEFT JOIN geofences gf ON gf.id = r.default_fence_id
+       ORDER BY r.id ASC`
+    )
+    return rows
+  }
+
+  async createGeofence(payload) {
+    await this.db.query(
+      `INSERT INTO geofences (name, lat, lng, radius, is_active)
+       VALUES (?, ?, ?, ?, ?)`,
+      [payload.name, payload.lat, payload.lng, payload.radius, payload.isActive ? 1 : 0]
+    )
+  }
+
+  async updateGeofence(payload) {
+    await this.db.query(
+      `UPDATE geofences
+       SET name=?, lat=?, lng=?, radius=?, is_active=?
+       WHERE id=?`,
+      [payload.name, payload.lat, payload.lng, payload.radius, payload.isActive ? 1 : 0, payload.id]
+    )
+  }
+
+  async upsertShiftRule(payload) {
+    await this.db.query(
+      `INSERT INTO role_shift_rules (role_id, punch_index, start_time, end_time, winter_start_time, required_fence_id)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE start_time=VALUES(start_time), end_time=VALUES(end_time), winter_start_time=VALUES(winter_start_time), required_fence_id=VALUES(required_fence_id)`,
+      [payload.roleId, payload.punchIndex, payload.startTime, payload.endTime, payload.winterStartTime || null, payload.requiredFenceId || null]
+    )
+  }
+
   async listApprovedAbsencesCoveringDate(bizDate) {
     const [rows] = await this.db.query(
       `SELECT user_id, type, start_at, end_at
@@ -137,6 +294,18 @@ class AttendanceRepository {
          AND DATE(start_at) <= ?
          AND DATE(end_at) >= ?`,
       [bizDate, bizDate]
+    )
+    return rows
+  }
+
+  async listApprovedAbsencesInRange(startDate, endDate) {
+    const [rows] = await this.db.query(
+      `SELECT user_id, type, start_at, end_at
+       FROM absences
+       WHERE status='APPROVED'
+         AND DATE(start_at) <= ?
+         AND DATE(end_at) >= ?`,
+      [endDate, startDate]
     )
     return rows
   }
