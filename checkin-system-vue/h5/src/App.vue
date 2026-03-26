@@ -593,7 +593,7 @@ onUnmounted(() => {
 .hint { margin: 12px 0 6px; color: #334155; font-size: 12px; padding-top: 12px; border-top: 1px dashed #e2e8f0; }
 .error { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
 .error-text { margin: 6px 0; color: #dc2626; }
-.panel { margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #fff; }
+.panel { margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #fff; overflow-x: auto; }
 .summary-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .breadcrumb { display: flex; gap: 8px; align-items: center; font-weight: 700; color: #0f172a; }
 .link-btn { border: 0; background: transparent; color: #1677ff; padding: 0; }
@@ -604,10 +604,10 @@ onUnmounted(() => {
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 input, button { font-size: 14px; }
 input { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; }
-.chart-box { margin-top: 8px; padding-top: 12px; border-top: 1px dashed #e2e8f0; }
-.chart-wrapper { display: flex; min-height: 200px; }
-.y-axis { width: 35px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: #64748b; text-align: right; padding-right: 8px; border-right: 1px solid #cbd5e1; }
-.chart-area { flex: 1; display: flex; flex-direction: column; }
+.chart-box { margin-top: 8px; padding-top: 12px; border-top: 1px dashed #e2e8f0; overflow-x: auto; }
+.chart-wrapper { display: flex; min-height: 200px; min-width: max-content; }
+.y-axis { width: 35px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: #64748b; text-align: right; padding-right: 8px; border-right: 1px solid #cbd5e1; flex-shrink: 0; }
+.chart-area { flex: 1; display: flex; flex-direction: column; min-width: 500px; }
 .chart-list { flex: 1; display: flex; justify-content: space-around; align-items: flex-end; padding-bottom: 0; border-bottom: 1px solid #cbd5e1; min-height: 160px; }
 .chart-item { width: 72px; text-align: center; display: flex; flex-direction: column; align-items: center; }
 .bars { display: flex; justify-content: center; align-items: flex-end; gap: 4px; height: 140px; }
