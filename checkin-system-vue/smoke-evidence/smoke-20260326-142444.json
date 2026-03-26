@@ -1,0 +1,67 @@
+{
+  "passed": true,
+  "mode": "docker",
+  "startedAt": "2026-03-26T06:24:44.552Z",
+  "finishedAt": "2026-03-26T06:24:44.656Z",
+  "checks": [
+    {
+      "name": "h5 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T06:24:44.567Z"
+    },
+    {
+      "name": "admin 页面可访问",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T06:24:44.569Z"
+    },
+    {
+      "name": "登录鉴权可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T06:24:44.588Z"
+    },
+    {
+      "name": "打卡计划接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T06:24:44.592Z"
+    },
+    {
+      "name": "受保护统计接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T06:24:44.596Z"
+    },
+    {
+      "name": "围栏预检接口可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200
+      },
+      "at": "2026-03-26T06:24:44.600Z"
+    },
+    {
+      "name": "xlsx双报表导出可用",
+      "status": "PASS",
+      "detail": {
+        "status": 200,
+        "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "disposition": "attachment; filename=\"attendance-2026-03-26-2026-03-26.xlsx\"",
+        "worksheetCount": 2
+      },
+      "at": "2026-03-26T06:24:44.656Z"
+    }
+  ]
+}
