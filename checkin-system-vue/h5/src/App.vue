@@ -4,6 +4,8 @@ import { ensureLogin } from './utils/auth'
 import { getLocation } from './utils/location'
 
 const user = ref(null)
+const authToken = ref('')
+const currentTab = ref('checkin')
 const plan = ref([])
 const history = ref([])
 const msg = ref('')
@@ -12,6 +14,24 @@ const loading = ref(false)
 const syncMsg = ref('')
 const nowText = ref('')
 const refreshing = ref(false)
+const summaryLoading = ref(false)
+const summaryMsg = ref('')
+const canAccessSummary = ref(false)
+const summaryLevel = ref('organization')
+const summaryData = ref({
+  range: {},
+  summary: { expected: 0, actual: 0, late: 0, leave: 0 },
+  rows: [],
+  bars: [],
+  records: []
+})
+const summaryMode = ref('day')
+const summaryDate = ref(new Date().toISOString().slice(0, 10))
+const customStartDate = ref(new Date().toISOString().slice(0, 10))
+const customEndDate = ref(new Date().toISOString().slice(0, 10))
+const calendarOpen = ref(false)
+const selectedDepartment = ref(null)
+const selectedUser = ref(null)
 
 const OFFLINE_KEY = 'checkin_offline_queue'
 const API_BASE = '/api/v1'
@@ -33,11 +53,60 @@ function createIdempotencyKey(item) {
   return `${item.userId}-${item.punchedAt}-${Math.random().toString(16).slice(2, 8)}`
 }
 
+function setDefaultCustomRange() {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  customStartDate.value = start.toISOString().slice(0, 10)
+  customEndDate.value = now.toISOString().slice(0, 10)
+}
+
 const queueCount = computed(() => getQueue().length)
 const checkedCount = computed(() => plan.value.filter((item) => item.checked).length)
 const pendingCount = computed(() => Math.max(0, plan.value.length - checkedCount.value))
 const lateCount = computed(() => plan.value.filter((item) => item.status === 'LATE').length)
 const nextNode = computed(() => plan.value.find((item) => !item.checked) || null)
+const summaryUnit = computed(() => (summaryLevel.value === 'user' ? '天' : '人'))
+const chartMax = computed(() => {
+  const values = summaryData.value.bars.flatMap((item) => [Number(item.expected || 0), Number(item.actual || 0)])
+  const max = Math.max(...values, 0)
+  return max > 0 ? max : 1
+})
+
+function barHeight(value) {
+  return `${Math.max(8, Math.round((Number(value || 0) / chartMax.value) * 140))}px`
+}
+
+async function ensureSummaryToken() {
+  if (!user.value?.userId) {
+    throw new Error('用户未就绪，请稍后重试')
+  }
+  if (authToken.value) return authToken.value
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: user.value.userId })
+  })
+  const data = await res.json()
+  if (!res.ok || data.code !== 'OK') {
+    throw new Error(data.message || '汇总鉴权失败')
+  }
+  authToken.value = data.data.token
+  return authToken.value
+}
+
+async function loadSummaryAccess() {
+  summaryMsg.value = ''
+  try {
+    const token = await ensureSummaryToken()
+    const res = await fetch(`${API_BASE}/h5/attendance/access`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    const data = await res.json()
+    canAccessSummary.value = true//Boolean(data?.data?.canAccess)
+  } catch (_error) {
+    canAccessSummary.value = false
+  }
+}
 
 async function loadPlan() {
   const res = await fetch(`${API_BASE}/checkins/plan?userId=${encodeURIComponent(user.value.userId)}`)
@@ -89,6 +158,88 @@ async function refreshAll() {
   }
 }
 
+function buildSummaryQuery() {
+  const params = new URLSearchParams()
+  params.set('mode', summaryMode.value)
+  if (summaryMode.value === 'custom') {
+    if (customStartDate.value) params.set('startDate', customStartDate.value)
+    if (customEndDate.value) params.set('endDate', customEndDate.value)
+  } else if (summaryDate.value) {
+    params.set('date', summaryDate.value)
+  }
+  if (selectedDepartment.value?.id) params.set('departmentId', String(selectedDepartment.value.id))
+  if (selectedUser.value?.id) params.set('userId', String(selectedUser.value.id))
+  return params
+}
+
+async function loadSummary() {
+  if (!user.value?.userId) return
+  summaryLoading.value = true
+  summaryMsg.value = ''
+  try {
+    const token = await ensureSummaryToken()
+    const query = buildSummaryQuery()
+    const res = await fetch(`${API_BASE}/h5/attendance/summary?${query.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+    const data = await res.json()
+    if (!res.ok || data.code !== 'OK') {
+      throw new Error(data.message || '考勤汇总加载失败')
+    }
+    summaryData.value = data.data
+    summaryLevel.value = data.data.level || 'organization'
+  } catch (error) {
+    summaryMsg.value = error.message || '考勤汇总加载失败'
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
+async function openSummary() {
+  if (!canAccessSummary.value) {
+    summaryMsg.value = '当前账号无考勤汇总权限'
+    return
+  }
+  currentTab.value = 'summary'
+  selectedDepartment.value = null
+  selectedUser.value = null
+  summaryMode.value = 'day'
+  summaryDate.value = new Date().toISOString().slice(0, 10)
+  await loadSummary()
+}
+
+async function openDepartment(row) {
+  selectedDepartment.value = row
+  selectedUser.value = null
+  await loadSummary()
+}
+
+async function openUser(row) {
+  selectedUser.value = row
+  summaryMode.value = 'month'
+  summaryDate.value = new Date().toISOString().slice(0, 10)
+  setDefaultCustomRange()
+  await loadSummary()
+}
+
+async function backSummary() {
+  if (summaryLevel.value === 'user') {
+    selectedUser.value = null
+    await loadSummary()
+    return
+  }
+  if (summaryLevel.value === 'department') {
+    selectedDepartment.value = null
+    await loadSummary()
+  }
+}
+
+async function applySummaryFilter() {
+  await loadSummary()
+}
+
 async function checkFence(loc) {
   const res = await fetch(`${API_BASE}/checkins/precheck`, {
     method: 'POST',
@@ -108,6 +259,10 @@ async function checkFence(loc) {
 }
 
 async function handleCheckin() {
+  if (!user.value?.userId) {
+    msg.value = '用户信息加载中，请稍后重试'
+    return
+  }
   if (loading.value) return
   loading.value = true
   msg.value = '正在定位并提交...'
@@ -156,7 +311,9 @@ async function handleCheckin() {
 
 onMounted(async () => {
   user.value = await ensureLogin()
+  setDefaultCustomRange()
   await refreshAll()
+  await loadSummaryAccess()
   window.addEventListener('online', syncOfflineQueue)
   nowText.value = new Date().toLocaleString()
   timerId = setInterval(() => {
@@ -175,76 +332,174 @@ onUnmounted(() => {
     <div class="checkin-container">
       <header class="hero">
         <div>
-          <h2>融媒体中心考勤打卡</h2>
+          <h2>{{ currentTab === 'checkin' ? '融媒体中心考勤打卡' : '考勤汇总' }}</h2>
           <p class="sub">{{ nowText }}</p>
         </div>
-        <button class="btn-ghost" :disabled="refreshing" @click="refreshAll">{{ refreshing ? '刷新中...' : '刷新数据' }}</button>
+        <button
+          v-if="currentTab === 'checkin'"
+          class="btn-ghost"
+          :disabled="refreshing"
+          @click="refreshAll"
+        >{{ refreshing ? '刷新中...' : '刷新数据' }}</button>
+        <button v-else class="btn-ghost" @click="currentTab = 'checkin'">返回打卡</button>
       </header>
 
-      <div v-if="user" class="user-card">
-        <div>
-          <p class="label">姓名</p>
-          <p class="value">{{ user.name }}</p>
+      <template v-if="currentTab === 'checkin'">
+        <div v-if="user" class="user-card">
+          <div>
+            <p class="label">姓名</p>
+            <p class="value">{{ user.name }}</p>
+          </div>
+          <div>
+            <p class="label">工号</p>
+            <p class="value">{{ user.userId }}</p>
+          </div>
+          <div>
+            <p class="label">离线队列</p>
+            <p class="value">{{ queueCount }} 条</p>
+          </div>
         </div>
-        <div>
-          <p class="label">工号</p>
-          <p class="value">{{ user.userId }}</p>
+
+        <div class="metrics">
+          <div class="metric"><span>今日节点</span><strong>{{ plan.length }}</strong></div>
+          <div class="metric"><span>已完成</span><strong>{{ checkedCount }}</strong></div>
+          <div class="metric"><span>待完成</span><strong>{{ pendingCount }}</strong></div>
+          <div class="metric warning"><span>迟到</span><strong>{{ lateCount }}</strong></div>
         </div>
-        <div>
-          <p class="label">离线队列</p>
-          <p class="value">{{ queueCount }} 条</p>
+
+        <div class="next-card" v-if="nextNode">
+          <p class="title">下一打卡节点</p>
+          <p>第{{ nextNode.punchIndex }}次（{{ nextNode.startTime }} - {{ nextNode.endTime }}）</p>
         </div>
-      </div>
 
-      <div class="metrics">
-        <div class="metric"><span>今日节点</span><strong>{{ plan.length }}</strong></div>
-        <div class="metric"><span>已完成</span><strong>{{ checkedCount }}</strong></div>
-        <div class="metric"><span>待完成</span><strong>{{ pendingCount }}</strong></div>
-        <div class="metric warning"><span>迟到</span><strong>{{ lateCount }}</strong></div>
-      </div>
+        <div class="action-section">
+          <button @click="handleCheckin" :disabled="loading" class="btn-checkin">{{ loading ? '处理中...' : '立即打卡' }}</button>
+          <button class="btn-second" :disabled="refreshing" @click="syncOfflineQueue">同步离线队列</button>
+          <button
+            v-if="canAccessSummary"
+            class="btn-entry"
+            :disabled="summaryLoading"
+            @click="openSummary"
+          >考勤汇总入口</button>
+        </div>
+        <p class="hint" v-if="precheckMsg">{{ precheckMsg }}</p>
+        <p class="hint" v-if="syncMsg">{{ syncMsg }}</p>
+        <p class="hint" v-if="!canAccessSummary">当前账号无考勤汇总权限</p>
+        <div v-if="msg" class="result-msg" :class="{ error: msg.includes('失败') || msg.includes('异常') }">{{ msg }}</div>
 
-      <div class="next-card" v-if="nextNode">
-        <p class="title">下一打卡节点</p>
-        <p>第{{ nextNode.punchIndex }}次（{{ nextNode.startTime }} - {{ nextNode.endTime }}）</p>
-      </div>
+        <div class="panel">
+          <h3>今日应打卡节点</h3>
+          <ul>
+            <li v-for="node in plan" :key="node.punchIndex" :class="{ done: node.checked, abnormal: node.status === 'LATE' }">
+              <div class="row-main">
+                <span>第{{ node.punchIndex }}次 {{ node.startTime }}-{{ node.endTime }}</span>
+                <span class="badge" :class="{ late: node.status === 'LATE', pending: node.status === 'PENDING' }">{{ node.status }}</span>
+              </div>
+              <div class="row-sub" v-if="node.punchedAt">打卡时间：{{ node.punchedAt }}</div>
+            </li>
+          </ul>
+        </div>
 
-      <div class="action-section">
-        <button @click="handleCheckin" :disabled="loading" class="btn-checkin">{{ loading ? '处理中...' : '立即打卡' }}</button>
-        <button class="btn-second" :disabled="refreshing" @click="syncOfflineQueue">同步离线队列</button>
-      </div>
-      <p class="hint" v-if="precheckMsg">{{ precheckMsg }}</p>
-      <p class="hint" v-if="syncMsg">{{ syncMsg }}</p>
-      <div v-if="msg" class="result-msg" :class="{ error: msg.includes('失败') || msg.includes('异常') }">{{ msg }}</div>
+        <div class="panel">
+          <h3>历史记录</h3>
+          <ul>
+            <li v-for="item in history" :key="item.id" :class="{ abnormal: item.status === 'LATE' }">
+              <div class="row-main">
+                <span>{{ item.biz_date }} 第{{ item.punch_index }}次</span>
+                <span class="badge" :class="{ late: item.status === 'LATE' }">{{ item.status }}</span>
+              </div>
+              <div class="row-sub">
+                {{ item.punched_at }}
+                <span v-if="Number(item.is_offline) === 1"> · 离线上传</span>
+                <span v-if="item.fence_name"> · {{ item.fence_name }}</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </template>
 
-      <div class="panel">
-        <h3>今日应打卡节点</h3>
-        <ul>
-          <li v-for="node in plan" :key="node.punchIndex" :class="{ done: node.checked, abnormal: node.status === 'LATE' }">
-            <div class="row-main">
-              <span>第{{ node.punchIndex }}次 {{ node.startTime }}-{{ node.endTime }}</span>
-              <span class="badge" :class="{ late: node.status === 'LATE', pending: node.status === 'PENDING' }">{{ node.status }}</span>
+      <template v-else>
+        <div class="panel">
+          <div class="summary-head">
+            <div class="breadcrumb">
+              <button v-if="summaryLevel !== 'organization'" class="link-btn" @click="backSummary">返回</button>
+              <span>{{ summaryLevel === 'organization' ? '考勤汇总' : summaryLevel === 'department' ? '部门汇总' : `${summaryData.title || '人员汇总'}` }}</span>
             </div>
-            <div class="row-sub" v-if="node.punchedAt">打卡时间：{{ node.punchedAt }}</div>
-          </li>
-        </ul>
-      </div>
+            <button class="btn-ghost" @click="calendarOpen = !calendarOpen">{{ calendarOpen ? '收起日历' : '编辑日期' }}</button>
+          </div>
 
-      <div class="panel">
-        <h3>历史记录</h3>
-        <ul>
-          <li v-for="item in history" :key="item.id" :class="{ abnormal: item.status === 'LATE' }">
-            <div class="row-main">
-              <span>{{ item.biz_date }} 第{{ item.punch_index }}次</span>
-              <span class="badge" :class="{ late: item.status === 'LATE' }">{{ item.status }}</span>
+          <div v-if="calendarOpen" class="calendar-box">
+            <div class="mode-row">
+              <button class="pill" :class="{ active: summaryMode === 'day' }" @click="summaryMode = 'day'">日</button>
+              <button class="pill" :class="{ active: summaryMode === 'week' }" @click="summaryMode = 'week'">周</button>
+              <button class="pill" :class="{ active: summaryMode === 'month' }" @click="summaryMode = 'month'">月</button>
+              <button class="pill" :class="{ active: summaryMode === 'custom' }" @click="summaryMode = 'custom'">自定义</button>
             </div>
-            <div class="row-sub">
-              {{ item.punched_at }}
-              <span v-if="Number(item.is_offline) === 1"> · 离线上传</span>
-              <span v-if="item.fence_name"> · {{ item.fence_name }}</span>
+            <div class="row">
+              <template v-if="summaryMode !== 'custom'">
+                <input type="date" v-model="summaryDate" />
+              </template>
+              <template v-else>
+                <input type="date" v-model="customStartDate" />
+                <span>至</span>
+                <input type="date" v-model="customEndDate" />
+              </template>
+              <button class="btn-second" :disabled="summaryLoading" @click="applySummaryFilter">查询</button>
             </div>
-          </li>
-        </ul>
-      </div>
+          </div>
+
+          <div class="metrics">
+            <div class="metric"><span>应到 / {{ summaryUnit }}</span><strong>{{ summaryData.summary.expected }}</strong></div>
+            <div class="metric"><span>实到 / {{ summaryUnit }}</span><strong>{{ summaryData.summary.actual }}</strong></div>
+            <div class="metric warning"><span>迟到 / {{ summaryUnit }}</span><strong>{{ summaryData.summary.late }}</strong></div>
+            <div class="metric"><span>请假 / {{ summaryUnit }}</span><strong>{{ summaryData.summary.leave }}</strong></div>
+          </div>
+
+          <p class="hint" v-if="summaryData.range?.startDate">范围：{{ summaryData.range.startDate }} ~ {{ summaryData.range.endDate }}</p>
+          <p class="hint" v-if="summaryLoading">汇总加载中...</p>
+          <p class="error-text" v-if="summaryMsg">{{ summaryMsg }}</p>
+
+          <div class="chart-box" v-if="summaryLevel !== 'user' && summaryData.bars.length">
+            <div class="chart-grid"></div>
+            <div class="chart-list">
+              <div class="chart-item" v-for="item in summaryData.bars" :key="item.id">
+                <div class="bars">
+                  <div class="bar expected" :style="{ height: barHeight(item.expected) }"></div>
+                  <div class="bar actual" :style="{ height: barHeight(item.actual) }"></div>
+                </div>
+                <div class="chart-label">{{ item.name }}</div>
+              </div>
+            </div>
+            <div class="legend">
+              <span><i class="dot expected"></i>应到</span>
+              <span><i class="dot actual"></i>实到</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" v-if="summaryLevel !== 'user'">
+          <ul>
+            <li v-for="row in summaryData.rows" :key="row.id" class="click-row" @click="summaryLevel === 'organization' ? openDepartment(row) : openUser(row)">
+              <div class="row-main">
+                <span>{{ row.name }}</span>
+                <span>{{ row.actual }}/{{ row.expected }} <strong class="arrow">›</strong></span>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <div class="panel" v-else>
+          <ul>
+            <li v-for="item in summaryData.records" :key="item.id">
+              <div class="row-main">
+                <span>{{ item.punchedAt }}</span>
+                <span>{{ item.punchType }}</span>
+                <span class="badge" :class="{ late: item.status === 'LATE' }">{{ item.status === 'NORMAL' ? '正常' : item.status === 'LATE' ? '迟到' : item.status }}</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -267,12 +522,37 @@ onUnmounted(() => {
 .next-card .title { margin: 0 0 4px; font-weight: 700; }
 .action-section { margin-bottom: 12px; display: flex; gap: 8px; }
 .btn-checkin { background: #1677ff; color: #fff; border: none; padding: 12px 20px; border-radius: 999px; font-size: 16px; }
-.btn-second { background: #fff; border: 1px solid #cbd5e1; color: #0f172a; padding: 12px 16px; border-radius: 999px; }
-.btn-checkin:disabled, .btn-second:disabled, .btn-ghost:disabled { opacity: 0.65; }
+.btn-second { background: #fff; border: 1px solid #cbd5e1; color: #0f172a; padding: 10px 14px; border-radius: 999px; }
+.btn-entry { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 10px 14px; border-radius: 999px; }
+.btn-checkin:disabled, .btn-second:disabled, .btn-entry:disabled, .btn-ghost:disabled { opacity: 0.65; }
 .result-msg { margin: 8px 0; padding: 8px 10px; background: #ecfdf3; color: #14532d; border-radius: 6px; border: 1px solid #bbf7d0; }
-.hint { margin: 6px 0; color: #334155; }
+.hint { margin: 6px 0; color: #334155; font-size: 12px; }
 .error { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+.error-text { margin: 6px 0; color: #dc2626; }
 .panel { margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #fff; }
+.summary-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.breadcrumb { display: flex; gap: 8px; align-items: center; font-weight: 700; color: #0f172a; }
+.link-btn { border: 0; background: transparent; color: #1677ff; padding: 0; }
+.calendar-box { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+.mode-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.pill { border: 1px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 6px 10px; color: #334155; }
+.pill.active { background: #1677ff; color: #fff; border-color: #1677ff; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input, button { font-size: 14px; }
+input { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; }
+.chart-box { margin-top: 8px; padding: 8px 0 0; }
+.chart-grid { height: 140px; border-left: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; position: relative; }
+.chart-list { margin-top: -140px; height: 140px; display: flex; justify-content: space-around; align-items: flex-end; gap: 12px; padding: 0 8px; }
+.chart-item { width: 72px; text-align: center; }
+.bars { display: flex; justify-content: center; align-items: flex-end; gap: 6px; height: 140px; }
+.bar { width: 18px; border-radius: 6px 6px 0 0; }
+.bar.expected { background: #3b82f6; }
+.bar.actual { background: #22c55e; }
+.chart-label { margin-top: 6px; font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.legend { display: flex; gap: 12px; margin-top: 8px; color: #475569; font-size: 12px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.dot.expected { background: #3b82f6; }
+.dot.actual { background: #22c55e; }
 ul { margin: 0; padding-left: 0; list-style: none; }
 li { margin-bottom: 8px; line-height: 1.5; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; }
 li:last-child { margin-bottom: 0; border-bottom: 0; padding-bottom: 0; }
@@ -281,6 +561,8 @@ li:last-child { margin-bottom: 0; border-bottom: 0; padding-bottom: 0; }
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; color: #334155; }
 .badge.pending { background: #f1f5f9; color: #475569; }
 .badge.late { background: #ffedd5; color: #9a3412; }
+.click-row { cursor: pointer; }
+.arrow { color: #94a3b8; }
 .done { color: #14532d; }
 .abnormal { color: #b45309; }
 </style>

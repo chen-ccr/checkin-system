@@ -213,6 +213,34 @@ class AttendanceService {
     return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
   }
 
+  countOverlapDays(startDate, endDate, absenceStartAt, absenceEndAt) {
+    const rangeStart = toDate(`${startDate}T00:00:00`)
+    const rangeEnd = toDate(`${endDate}T23:59:59`)
+    const leaveStart = toDate(absenceStartAt)
+    const leaveEnd = toDate(absenceEndAt)
+    const overlapStart = new Date(Math.max(rangeStart.getTime(), leaveStart.getTime()))
+    const overlapEnd = new Date(Math.min(rangeEnd.getTime(), leaveEnd.getTime()))
+    if (overlapStart.getTime() > overlapEnd.getTime()) {
+      return 0
+    }
+    const startOnly = toDate(`${formatDate(overlapStart)}T00:00:00`)
+    const endOnly = toDate(`${formatDate(overlapEnd)}T00:00:00`)
+    return Math.floor((endOnly.getTime() - startOnly.getTime()) / 86400000) + 1
+  }
+
+  resolvePunchType(punchIndex) {
+    return Number(punchIndex) % 2 === 1 ? '上班' : '下班'
+  }
+
+  canAccessH5Summary(auth) {
+    if (auth.role === 'SUPER_ADMIN') return true
+    const allowIds = (process.env.H5_SUMMARY_USER_IDS || 'test123')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    return allowIds.includes(String(auth.userId || ''))
+  }
+
   async getAdminBootstrap() {
     const [departments, roles, geofences, shiftRules] = await Promise.all([
       this.repository.listDepartments(),
@@ -249,6 +277,15 @@ class AttendanceService {
     }
     await this.repository.updateUser(data)
     return { updated: true }
+  }
+
+  async saveDepartmentForAdmin(payload) {
+    const name = String(payload.name || '').trim()
+    if (!name) {
+      throw new AppError(errorCodes.INVALID_INPUT, '部门名称不能为空', 422)
+    }
+    await this.repository.createDepartment(name)
+    return { created: true }
   }
 
   async saveFenceForAdmin(payload) {
@@ -348,6 +385,181 @@ class AttendanceService {
       abnormalUsers,
       records: checkins
     }
+  }
+
+  async getH5Summary(auth, query = {}) {
+    if (!this.canAccessH5Summary(auth)) {
+      throw new AppError(errorCodes.FORBIDDEN, '无权访问考勤汇总', 403)
+    }
+    const range = this.resolveRange(query)
+    const requestedDepartmentId = query.departmentId ? Number(query.departmentId) : null
+    const scopedDepartmentId = this.resolveScopedDepartment(auth, requestedDepartmentId)
+    const targetUserId = query.userId ? String(query.userId).trim() : ''
+    const isAdmin = auth.role === 'SUPER_ADMIN' || auth.role === 'ADMIN'
+    if (targetUserId && !isAdmin && targetUserId !== auth.userId) {
+      throw new AppError(errorCodes.FORBIDDEN, '无权查看该人员汇总', 403)
+    }
+    const filters = {
+      startDate: range.startDate,
+      endDate: range.endDate,
+      departmentId: scopedDepartmentId || undefined,
+      userId: targetUserId || undefined
+    }
+    const [allUsers, checkins, absences, departments] = await Promise.all([
+      this.repository.listUsers({
+        departmentId: scopedDepartmentId || undefined,
+        onlyActive: true
+      }),
+      this.repository.listCheckinsByRange(filters),
+      this.repository.listApprovedAbsencesInRange(range.startDate, range.endDate),
+      this.repository.listDepartments()
+    ])
+
+    const users = targetUserId ? allUsers.filter((item) => item.id === targetUserId) : allUsers
+    if (targetUserId && users.length === 0) {
+      throw new AppError(errorCodes.NOT_FOUND, '人员不存在或无权限', 404)
+    }
+
+    const shiftCountByRole = {}
+    for (const user of users) {
+      if (!shiftCountByRole[user.role_id]) {
+        const shifts = await this.repository.findShiftRulesByRoleId(user.role_id)
+        shiftCountByRole[user.role_id] = shifts.length
+      }
+    }
+
+    const recordsByUser = checkins.reduce((acc, item) => {
+      if (!acc[item.user_id]) acc[item.user_id] = []
+      acc[item.user_id].push(item)
+      return acc
+    }, {})
+    const absencesByUser = absences.reduce((acc, item) => {
+      if (!acc[item.user_id]) acc[item.user_id] = []
+      acc[item.user_id].push(item)
+      return acc
+    }, {})
+    const days = this.countDays(range.startDate, range.endDate)
+
+    const userMetrics = users.map((user) => {
+      const userCheckins = recordsByUser[user.id] || []
+      const userAbsences = absencesByUser[user.id] || []
+      const leaveDays = userAbsences.reduce((sum, absence) => {
+        return sum + this.countOverlapDays(range.startDate, range.endDate, absence.start_at, absence.end_at)
+      }, 0)
+      return {
+        userId: user.id,
+        userName: user.name,
+        departmentId: Number(user.department_id),
+        departmentName: user.department_name,
+        expected: (shiftCountByRole[user.role_id] || 0) * days,
+        actual: userCheckins.length,
+        late: userCheckins.filter((item) => Number(item.late_minutes) > 0).length,
+        leaveDays
+      }
+    })
+
+    const summaryBase = userMetrics.reduce(
+      (acc, item) => {
+        acc.expected += item.expected
+        acc.actual += item.actual
+        acc.late += item.late
+        return acc
+      },
+      { expected: 0, actual: 0, late: 0 }
+    )
+
+    const response = {
+      range,
+      mode: range.mode,
+      summary: {
+        expected: summaryBase.expected,
+        actual: summaryBase.actual,
+        late: summaryBase.late,
+        leave: 0
+      },
+      departments: departments
+        .filter((item) => !scopedDepartmentId || Number(item.id) === Number(scopedDepartmentId))
+        .map((item) => ({ id: Number(item.id), name: item.name })),
+      bars: [],
+      rows: [],
+      records: []
+    }
+
+    if (targetUserId) {
+      const target = userMetrics[0]
+      response.level = 'user'
+      response.title = `${target.userName}的考勤`
+      response.summary.leave = target.leaveDays
+      response.records = (recordsByUser[targetUserId] || [])
+        .slice()
+        .sort((a, b) => String(b.punched_at).localeCompare(String(a.punched_at)))
+        .map((item) => ({
+          id: item.id,
+          bizDate: item.biz_date,
+          punchedAt: item.punched_at,
+          punchType: this.resolvePunchType(item.punch_index),
+          status: item.status,
+          lateMinutes: Number(item.late_minutes || 0)
+        }))
+      return response
+    }
+
+    if (scopedDepartmentId) {
+      response.level = 'department'
+      response.summary.leave = userMetrics.filter((item) => item.leaveDays > 0).length
+      response.bars = userMetrics.map((item) => ({
+        id: item.userId,
+        name: item.userName,
+        expected: item.expected,
+        actual: item.actual
+      }))
+      response.rows = userMetrics.map((item) => ({
+        id: item.userId,
+        name: item.userName,
+        expected: item.expected,
+        actual: item.actual,
+        late: item.late,
+        leave: item.leaveDays
+      }))
+      return response
+    }
+
+    const departmentMap = {}
+    for (const item of userMetrics) {
+      if (!departmentMap[item.departmentId]) {
+        departmentMap[item.departmentId] = {
+          id: item.departmentId,
+          name: item.departmentName,
+          expected: 0,
+          actual: 0,
+          late: 0,
+          leaveUsers: 0
+        }
+      }
+      const target = departmentMap[item.departmentId]
+      target.expected += item.expected
+      target.actual += item.actual
+      target.late += item.late
+      if (item.leaveDays > 0) target.leaveUsers += 1
+    }
+    const departmentRows = Object.values(departmentMap)
+    response.level = 'organization'
+    response.summary.leave = departmentRows.reduce((sum, item) => sum + item.leaveUsers, 0)
+    response.bars = departmentRows.map((item) => ({
+      id: item.id,
+      name: item.name,
+      expected: item.expected,
+      actual: item.actual
+    }))
+    response.rows = departmentRows.map((item) => ({
+      id: item.id,
+      name: item.name,
+      expected: item.expected,
+      actual: item.actual,
+      late: item.late,
+      leave: item.leaveUsers
+    }))
+    return response
   }
 
   async exportDashboard(auth, query = {}) {

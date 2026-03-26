@@ -146,6 +146,31 @@ function buildV1Router(attendanceService) {
     }
   })
 
+  router.get('/h5/attendance/summary', requireAuth, async (req, res, next) => {
+    try {
+      const data = await attendanceService.getH5Summary(req.auth, {
+        mode: req.query.mode,
+        date: req.query.date,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        departmentId: req.query.departmentId,
+        userId: req.query.userId
+      })
+      res.json({ code: 'OK', data })
+    } catch (err) {
+      next(err)
+    }
+  })
+
+  router.get('/h5/attendance/access', requireAuth, async (req, res) => {
+    res.json({
+      code: 'OK',
+      data: {
+        canAccess: attendanceService.canAccessH5Summary(req.auth)
+      }
+    })
+  })
+
   router.get('/checkins', requireAuth, async (req, res, next) => {
     try {
       const stats = await attendanceService.getDailyStats(req.query.date)
@@ -196,6 +221,15 @@ function buildV1Router(attendanceService) {
     try {
       const data = await attendanceService.saveUserForAdmin(req.auth, req.body)
       res.json({ code: 'OK', message: '用户保存成功', data })
+    } catch (err) {
+      next(err)
+    }
+  })
+
+  router.post('/admin/departments', requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), async (req, res, next) => {
+    try {
+      const data = await attendanceService.saveDepartmentForAdmin(req.body)
+      res.json({ code: 'OK', message: '部门保存成功', data })
     } catch (err) {
       next(err)
     }

@@ -37,6 +37,8 @@ services:
     image: checkin-h5:${IMAGE_TAG:-latest}
     ports:
       - "${H5_PORT:-8091}:80"
+    depends_on:
+      - server
     restart: unless-stopped
 
   admin:
@@ -44,6 +46,8 @@ services:
     image: checkin-admin:${IMAGE_TAG:-latest}
     ports:
       - "${ADMIN_PORT:-8090}:80"
+    depends_on:
+      - server
     restart: unless-stopped
 
 volumes:

@@ -20,6 +20,16 @@ async function hasColumn(db, tableName, columnName) {
   return Number(rows[0].total) > 0
 }
 
+function formatDateTime(value) {
+  const y = value.getFullYear()
+  const m = String(value.getMonth() + 1).padStart(2, '0')
+  const d = String(value.getDate()).padStart(2, '0')
+  const hh = String(value.getHours()).padStart(2, '0')
+  const mm = String(value.getMinutes()).padStart(2, '0')
+  const ss = String(value.getSeconds()).padStart(2, '0')
+  return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
+}
+
 async function migrate(db) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS departments (
@@ -144,12 +154,16 @@ async function migrate(db) {
     )
   `)
 
-  const [departmentRows] = await db.query('SELECT id FROM departments WHERE name=? LIMIT 1', ['融媒体中心'])
-  if (departmentRows.length === 0) {
-    await db.query('INSERT INTO departments (name) VALUES (?)', ['融媒体中心'])
+  const departmentSeeds = ['融媒体中心', '新媒体发展部', '办公室', '外宣部', '编辑制作部']
+  for (const departmentName of departmentSeeds) {
+    await db.query('INSERT INTO departments (name) VALUES (?) ON DUPLICATE KEY UPDATE name=VALUES(name)', [departmentName])
   }
-  const [finalDepartmentRows] = await db.query('SELECT id FROM departments WHERE name=? LIMIT 1', ['融媒体中心'])
-  const defaultDepartmentId = finalDepartmentRows[0].id
+  const [departmentList] = await db.query('SELECT id, name FROM departments')
+  const departmentMap = departmentList.reduce((acc, item) => {
+    acc[item.name] = item.id
+    return acc
+  }, {})
+  const defaultDepartmentId = departmentMap['融媒体中心']
 
   const [fenceRows] = await db.query('SELECT id, name FROM geofences')
   if (!fenceRows.find((item) => item.name === '融媒体中心')) {
@@ -228,13 +242,84 @@ async function migrate(db) {
   const userSeeds = [
     ['test123', '测试用户', defaultDepartmentId, roleMap[ROLE_CODES.ADMIN]],
     ['staff001', '工作人员甲', defaultDepartmentId, roleMap[ROLE_CODES.STAFF]],
-    ['trans001', '传输值机甲', defaultDepartmentId, roleMap[ROLE_CODES.TRANSMISSION]]
+    ['trans001', '传输值机甲', defaultDepartmentId, roleMap[ROLE_CODES.TRANSMISSION]],
+    ['xm_li_ren', '李仁', departmentMap['新媒体发展部'], roleMap[ROLE_CODES.STAFF]],
+    ['xm_zhang_ying', '张英', departmentMap['新媒体发展部'], roleMap[ROLE_CODES.STAFF]],
+    ['office_cheng_shang', '程尚', departmentMap['办公室'], roleMap[ROLE_CODES.STAFF]],
+    ['office_li_youtian', '李有田', departmentMap['办公室'], roleMap[ROLE_CODES.STAFF]],
+    ['wx_zhao_kuo', '赵括', departmentMap['外宣部'], roleMap[ROLE_CODES.STAFF]],
+    ['edit_han_jiang', '韩江', departmentMap['编辑制作部'], roleMap[ROLE_CODES.STAFF]],
+    ['edit_liu_shun', '刘顺', departmentMap['编辑制作部'], roleMap[ROLE_CODES.STAFF]]
   ]
 
   for (const user of userSeeds) {
     await db.query(
       'INSERT INTO users (id, name, department_id, role_id) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), department_id=VALUES(department_id), role_id=VALUES(role_id)',
       user
+    )
+  }
+
+  const [checkinCountRows] = await db.query('SELECT COUNT(*) AS total FROM checkins')
+  if (Number(checkinCountRows[0].total) === 0) {
+    const [ruleRows] = await db.query('SELECT role_id, punch_index, start_time, end_time, required_fence_id FROM role_shift_rules ORDER BY role_id, punch_index')
+    const ruleMap = ruleRows.reduce((acc, item) => {
+      if (!acc[item.role_id]) acc[item.role_id] = []
+      acc[item.role_id].push(item)
+      return acc
+    }, {})
+    const [userRows] = await db.query('SELECT u.id, u.role_id, r.default_fence_id FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id IN (?, ?, ?)', [
+      'test123',
+      'staff001',
+      'trans001'
+    ])
+    const userMap = userRows.reduce((acc, item) => {
+      acc[item.id] = item
+      return acc
+    }, {})
+    const now = new Date()
+    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+      const base = new Date(now)
+      base.setDate(now.getDate() - dayOffset)
+      const bizDate = formatDateTime(new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0)).slice(0, 10)
+      const userIds = ['test123', 'staff001', 'trans001']
+      for (const uid of userIds) {
+        const user = userMap[uid]
+        if (!user) continue
+        const rules = ruleMap[user.role_id] || []
+        for (const rule of rules) {
+          const [h, m, s] = String(rule.start_time).split(':').map(Number)
+          const punchedAt = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m + (uid === 'staff001' && rule.punch_index === 1 ? 12 : 1), s || 0)
+          const isLate = uid === 'staff001' && rule.punch_index === 1 && dayOffset < 3
+          const lateMinutes = isLate ? 12 : 0
+          const status = isLate ? 'LATE' : 'NORMAL'
+          await db.query(
+            `INSERT INTO checkins
+             (user_id, biz_date, punch_index, punched_at, lat, lng, fence_id, distance_meters, status, late_minutes, is_offline, idempotency_key)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE punched_at=VALUES(punched_at), status=VALUES(status), late_minutes=VALUES(late_minutes), is_offline=VALUES(is_offline)`,
+            [
+              uid,
+              bizDate,
+              rule.punch_index,
+              formatDateTime(punchedAt),
+              uid === 'trans001' ? 26.3883 : 26.5669,
+              uid === 'trans001' ? 108.1887 : 107.5172,
+              rule.required_fence_id || user.default_fence_id || fenceByName['融媒体中心'],
+              uid === 'trans001' ? 120 : 40,
+              status,
+              lateMinutes,
+              uid === 'trans001' && dayOffset % 2 === 0 ? 1 : 0,
+              `${uid}-${bizDate}-${rule.punch_index}`
+            ]
+          )
+        }
+      }
+    }
+    await db.query(
+      `INSERT INTO absences (user_id, type, start_at, end_at, status, source, external_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE status=VALUES(status), start_at=VALUES(start_at), end_at=VALUES(end_at)`,
+      ['staff001', ABSENCE_TYPE.LEAVE, `${formatDateTime(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2, 0, 0, 0))}`, `${formatDateTime(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2, 23, 59, 59))}`, ABSENCE_STATUS.APPROVED, 'seed', 'seed-staff001-leave']
     )
   }
 }

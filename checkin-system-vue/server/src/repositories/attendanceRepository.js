@@ -250,6 +250,15 @@ class AttendanceRepository {
     return rows
   }
 
+  async createDepartment(name) {
+    const [result] = await this.db.query(
+      `INSERT INTO departments (name)
+       VALUES (?)`,
+      [name]
+    )
+    return result.insertId
+  }
+
   async listRoles() {
     const [rows] = await this.db.query(
       `SELECT r.id, r.code, r.name, r.punch_model, r.default_fence_id, gf.name AS default_fence_name

@@ -11,6 +11,7 @@ const users = ref([])
 const dashboard = ref({ summary: { expected: 0, actual: 0, late: 0, leave: 0, missing: 0 }, abnormalUsers: [], records: [], range: {} })
 const query = ref({ mode: 'day', date: '', departmentId: '', userId: '' })
 const userForm = ref({ id: '', name: '', departmentId: '', roleId: '', isActive: true })
+const departmentForm = ref({ name: '' })
 const fenceForm = ref({ id: '', name: '', lat: '', lng: '', radius: '', isActive: true })
 const ruleForm = ref({ roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' })
 const activeTab = ref('dashboard')
@@ -77,6 +78,14 @@ async function saveUser() {
   await api.post('/admin/users', userForm.value)
   msg.value = '用户保存成功'
   userForm.value = { id: '', name: '', departmentId: userForm.value.departmentId || '', roleId: '', isActive: true }
+  await loadUsers()
+}
+
+async function saveDepartment() {
+  await api.post('/admin/departments', departmentForm.value)
+  msg.value = '部门保存成功'
+  departmentForm.value = { name: '' }
+  await loadBootstrap()
   await loadUsers()
 }
 
@@ -154,6 +163,7 @@ if (token.value) {
       </div>
       <div class="tabs">
         <button :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">汇总看板</button>
+        <button :class="{ active: activeTab === 'departments' }" @click="activeTab = 'departments'">部门管理</button>
         <button :class="{ active: activeTab === 'users' }" @click="activeTab = 'users'">人员管理</button>
         <button :class="{ active: activeTab === 'fences' }" @click="activeTab = 'fences'">围栏管理</button>
         <button :class="{ active: activeTab === 'rules' }" @click="activeTab = 'rules'">班次规则</button>
@@ -203,8 +213,35 @@ if (token.value) {
         </table>
       </div>
 
+      <div class="card" v-if="activeTab === 'departments'">
+        <h3>部门管理</h3>
+        <div class="row">
+          <input v-model="departmentForm.name" placeholder="部门名称" />
+          <button @click="saveDepartment">新增部门</button>
+        </div>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>部门名称</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="d in bootstrap.departments" :key="d.id">
+              <td>{{ d.id }}</td>
+              <td>{{ d.name }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div class="card" v-if="activeTab === 'users'">
         <h3>人员与角色配置</h3>
+        <div class="row">
+          <label>部门筛选</label>
+          <select v-model="query.departmentId">
+            <option value="">全部</option>
+            <option v-for="d in bootstrap.departments" :key="d.id" :value="String(d.id)">{{ d.name }}</option>
+          </select>
+          <button @click="loadUsers">筛选</button>
+        </div>
         <div class="row">
           <input v-model="userForm.id" placeholder="用户ID" />
           <input v-model="userForm.name" placeholder="姓名" />
