@@ -531,9 +531,9 @@ onUnmounted(() => {
 .next-card { margin-bottom: 12px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1e3a8a; border-radius: 10px; padding: 10px 12px; }
 .next-card .title { margin: 0 0 4px; font-weight: 700; }
 .action-section { margin-bottom: 12px; display: flex; gap: 8px; }
-.btn-checkin { background: #1677ff; color: #fff; border: none; padding: 12px 20px; border-radius: 999px; font-size: 16px; }
-.btn-second { background: #fff; border: 1px solid #cbd5e1; color: #0f172a; padding: 10px 14px; border-radius: 999px; }
-.btn-entry { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 10px 14px; border-radius: 999px; }
+.btn-checkin { background: #1677ff; color: #fff; border: none; padding: 12px 16px; border-radius: 999px; font-size: 14px; white-space: nowrap; }
+.btn-second { background: #fff; border: 1px solid #cbd5e1; color: #0f172a; padding: 10px 12px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
+.btn-entry { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 10px 12px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
 .btn-checkin:disabled, .btn-second:disabled, .btn-entry:disabled, .btn-ghost:disabled { opacity: 0.65; }
 .result-msg { margin: 8px 0; padding: 8px 10px; background: #ecfdf3; color: #14532d; border-radius: 6px; border: 1px solid #bbf7d0; }
 .hint { margin: 6px 0; color: #334155; font-size: 12px; }

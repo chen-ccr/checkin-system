@@ -1,31 +1,13 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>考勤管理后台</title>
+  <script src="https://webapi.amap.com/maps?v=2.0&key=a9ba8d25e074429c7711ccad6cb05950"></script>
+</head>
 <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-    <script src="https://webapi.amap.com/maps?v=2.0&key=a9ba8d25e074429c7711ccad6cb05950">
-        const map = new AMap.Map('map', {
-            zoom: 15,
-            center: [121.4737, 31.2304]
-        })
-
-        let marker
-
-        map.on('click', function (e) {
-            const { lng, lat } = e.lnglat
-
-            if (marker) map.remove(marker)
-
-            marker = new AMap.Marker({
-                position: [lng, lat]
-            })
-
-            map.add(marker)
-
-            selected = { lat, lng }
-        })
-    </script>
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
 </body>
-
 </html>

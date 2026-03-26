@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -17,6 +17,9 @@ const ruleForm = ref({ roleId: '', punchIndex: '', startTime: '', endTime: '', w
 const activeTab = ref('dashboard')
 const loading = ref(false)
 const msg = ref('')
+
+let fenceMap = null
+let fenceMarker = null
 
 api.interceptors.request.use((config) => {
   if (token.value) {
@@ -90,10 +93,106 @@ async function saveDepartment() {
 }
 
 async function saveFence() {
-  await api.post('/admin/geofences', fenceForm.value)
-  msg.value = '围栏保存成功'
-  fenceForm.value = { id: '', name: '', lat: '', lng: '', radius: '', isActive: true }
+  if (!fenceForm.value.name) {
+    msg.value = '请输入围栏名称'
+    return
+  }
+  if (!fenceForm.value.lat || !fenceForm.value.lng) {
+    msg.value = '请选择或输入经纬度'
+    return
+  }
+  if (!fenceForm.value.radius) {
+    msg.value = '请输入半径'
+    return
+  }
+
+  const payload = {
+    name: fenceForm.value.name,
+    lat: Number(fenceForm.value.lat),
+    lng: Number(fenceForm.value.lng),
+    radius: Number(fenceForm.value.radius),
+    isActive: fenceForm.value.isActive
+  }
+
+  if (fenceForm.value.id) {
+    payload.id = fenceForm.value.id
+  }
+
+  await api.post('/admin/geofences', payload)
+  msg.value = fenceForm.value.id ? '围栏更新成功' : '围栏新增成功'
+  clearFenceForm()
   await loadBootstrap()
+}
+
+function editFence(fence) {
+  fenceForm.value = {
+    id: fence.id,
+    name: fence.name,
+    lat: fence.lat,
+    lng: fence.lng,
+    radius: fence.radius,
+    isActive: Number(fence.is_active) === 1
+  }
+  updateFenceMap()
+  msg.value = ''
+}
+
+async function deleteFence(id) {
+  if (!confirm(`确定删除围栏 ID=${id} 吗？`)) return
+  await api.delete(`/admin/geofences/${id}`)
+  msg.value = '围栏删除成功'
+  if (fenceForm.value.id === id) {
+    clearFenceForm()
+  }
+  await loadBootstrap()
+}
+
+function clearFenceForm() {
+  fenceForm.value = { id: '', name: '', lat: '', lng: '', radius: '', isActive: true }
+  if (fenceMarker) {
+    fenceMap?.remove(fenceMarker)
+    fenceMarker = null
+  }
+  msg.value = ''
+}
+
+function initFenceMap() {
+  if (fenceMap) return
+
+  setTimeout(() => {
+    if (window.AMap && document.getElementById('fence-map')) {
+      fenceMap = new AMap.Map('fence-map', {
+        zoom: 15,
+        center: [115.89925, 28.68503]
+      })
+
+      fenceMap.on('click', (e) => {
+        const { lng, lat } = e.lnglat
+        fenceForm.value.lat = lat.toFixed(6)
+        fenceForm.value.lng = lng.toFixed(6)
+        updateFenceMap()
+      })
+
+      updateFenceMap()
+    }
+  }, 500)
+}
+
+function updateFenceMap() {
+  if (!fenceMap) return
+
+  if (fenceMarker) {
+    fenceMap.remove(fenceMarker)
+    fenceMarker = null
+  }
+
+  if (fenceForm.value.lat && fenceForm.value.lng) {
+    fenceMarker = new AMap.Marker({
+      position: [Number(fenceForm.value.lng), Number(fenceForm.value.lat)]
+    })
+    fenceMap.add(fenceMarker)
+    fenceMap.setCenter([Number(fenceForm.value.lng), Number(fenceForm.value.lat)])
+  }
 }
 
 async function saveShiftRule() {
@@ -143,6 +242,12 @@ if (token.value) {
     logout()
   })
 }
+
+watch(activeTab, (newTab) => {
+  if (newTab === 'fences') {
+    setTimeout(initFenceMap, 100)
+  }
+})
 </script>
 
 <template>
@@ -275,17 +380,19 @@ if (token.value) {
       <div class="card" v-if="activeTab === 'fences'">
         <h3>围栏配置</h3>
         <div class="row">
-          <input v-model="fenceForm.id" placeholder="围栏ID（留空为新增）" />
-          <input v-model="fenceForm.name" placeholder="围栏名称" />
-          <input v-model="fenceForm.lat" placeholder="纬度" />
-          <input v-model="fenceForm.lng" placeholder="经度" />
-          <input v-model="fenceForm.radius" placeholder="半径（米）" />
+          <input v-model="fenceForm.name" placeholder="围栏名称" style="flex: 1" />
+          <input v-model="fenceForm.lat" placeholder="纬度" style="width: 100px" />
+          <input v-model="fenceForm.lng" placeholder="经度" style="width: 100px" />
+          <input v-model="fenceForm.radius" placeholder="半径（米）" style="width: 80px" />
           <label><input type="checkbox" v-model="fenceForm.isActive" /> 启用</label>
-          <button @click="saveFence">保存</button>
+          <button @click="saveFence">{{ fenceForm.id ? '更新' : '新增' }}</button>
+          <button @click="clearFenceForm" style="background: #f0f0f0">清空</button>
         </div>
+        <p style="font-size: 12px; color: #666; margin: 8px 0;">💡 点击地图选择位置或手动输入经纬度</p>
+        <div id="fence-map" style="height: 300px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px;"></div>
         <table>
           <thead>
-            <tr><th>ID</th><th>名称</th><th>坐标</th><th>半径</th><th>状态</th></tr>
+            <tr><th>ID</th><th>名称</th><th>坐标</th><th>半径</th><th>状态</th><th>操作</th></tr>
           </thead>
           <tbody>
             <tr v-for="f in bootstrap.geofences" :key="f.id">
@@ -294,6 +401,10 @@ if (token.value) {
               <td>{{ f.lat }}, {{ f.lng }}</td>
               <td>{{ f.radius }}m</td>
               <td>{{ Number(f.is_active) === 1 ? '启用' : '停用' }}</td>
+              <td>
+                <button @click="editFence(f)" style="margin-right: 4px; padding: 4px 8px; font-size: 12px;">编辑</button>
+                <button @click="deleteFence(f.id)" style="background: #fee; color: #c00; padding: 4px 8px; font-size: 12px;">删除</button>
+              </td>
             </tr>
           </tbody>
         </table>
