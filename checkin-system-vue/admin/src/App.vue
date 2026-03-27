@@ -434,14 +434,46 @@ watch(activeTab, (newTab) => {
 </script>
 
 <template>
-  <div class="page">
-    <h2>考勤管理后台</h2>
+  <div class="login-page">
+    <div class="bg-animation">
+      <div class="grid-lines"></div>
+      <div class="glow-orb orb1"></div>
+      <div class="glow-orb orb2"></div>
+    </div>
 
-    <div v-if="!token" class="card">
-      <h3>登录</h3>
-      <input v-model="loginUserId" placeholder="输入用户ID，例如 test123" />
-      <button :disabled="loading" @click="login">{{ loading ? '登录中...' : '登录' }}</button>
-      <p class="error" v-if="msg">{{ msg }}</p>
+    <div v-if="!token" class="login-container">
+      <div class="login-card">
+        <div class="login-header">
+          <div class="logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+          </div>
+          <h1>考勤管理系统</h1>
+          <p class="subtitle">智能打卡 · 高效管理</p>
+        </div>
+
+        <div class="login-body">
+          <div class="input-group">
+            <div class="input-wrapper">
+              <span class="input-icon">👤</span>
+              <input v-model="loginUserId" placeholder="请输入用户ID" @keyup.enter="login" />
+            </div>
+          </div>
+
+          <button class="login-btn" :disabled="loading" @click="login">
+            <span v-if="loading" class="loading-spinner"></span>
+            <span v-else>登 录</span>
+          </button>
+
+          <p class="error-msg" v-if="msg">{{ msg }}</p>
+        </div>
+
+        <div class="login-footer">
+          <span class="version">v2.0</span>
+        </div>
+      </div>
     </div>
 
     <div v-else>
@@ -710,6 +742,232 @@ watch(activeTab, (newTab) => {
 </template>
 
 <style scoped>
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0e27;
+  position: relative;
+  overflow: hidden;
+}
+
+.bg-animation {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.grid-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(rgba(22, 119, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 119, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  animation: gridMove 20s linear infinite;
+}
+
+@keyframes gridMove {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(50px); }
+}
+
+.glow-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  animation: float 8s ease-in-out infinite;
+}
+
+.orb1 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, #1677ff 0%, transparent 70%);
+  top: -100px;
+  right: -100px;
+}
+
+.orb2 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, #00d4ff 0%, transparent 70%);
+  bottom: -50px;
+  left: -50px;
+  animation-delay: -4s;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-30px) scale(1.05); }
+}
+
+.login-container {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 420px;
+  padding: 20px;
+}
+
+.login-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 48px 40px;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.logo-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  background: linear-gradient(135deg, #1677ff 0%, #00d4ff 100%);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 32px rgba(22, 119, 255, 0.3);
+}
+
+.logo-icon svg {
+  width: 36px;
+  height: 36px;
+  color: white;
+}
+
+.login-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 8px 0;
+  letter-spacing: 2px;
+}
+
+.login-header .subtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+  letter-spacing: 4px;
+}
+
+.login-body {
+  margin-bottom: 32px;
+}
+
+.input-group {
+  margin-bottom: 24px;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0 16px;
+  transition: all 0.3s ease;
+}
+
+.input-wrapper:focus-within {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.2);
+}
+
+.input-icon {
+  font-size: 18px;
+  margin-right: 12px;
+}
+
+.input-wrapper input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 16px 0;
+  font-size: 16px;
+  color: #fff;
+}
+
+.input-wrapper input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, #1677ff 0%, #00d4ff 100%);
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  letter-spacing: 4px;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 32px rgba(22, 119, 255, 0.3);
+}
+
+.login-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(22, 119, 255, 0.4);
+}
+
+.login-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.login-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-msg {
+  text-align: center;
+  color: #ff6b6b;
+  font-size: 14px;
+  margin-top: 16px;
+}
+
+.login-footer {
+  text-align: center;
+}
+
+.version {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 2px;
+}
+
 .page { max-width: 1200px; margin: 0 auto; padding: 20px; font-family: sans-serif; }
 .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 16px; background: #fff; }
 .toolbar { display: flex; justify-content: space-between; margin-bottom: 12px; }
