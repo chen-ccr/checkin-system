@@ -1,7 +1,7 @@
-FROM node:18-alpine
+FROM docker.1ms.run/library/node:18-alpine
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install --registry=https://registry.npmmirror.com
 COPY . .
 EXPOSE 3001
-CMD ["node", "src/index.js"]
+CMD ["node", "app.js"]

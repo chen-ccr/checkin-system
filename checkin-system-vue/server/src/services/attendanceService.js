@@ -3,7 +3,7 @@ const errorCodes = require('../constants/errorCodes')
 const ExcelJS = require('exceljs')
 const { ABSENCE_STATUS } = require('../constants/domain')
 const { distanceInMeters } = require('../utils/geo')
-const { resolveBusinessDate, formatDate, toDate } = require('../utils/time')
+const { resolveBusinessDate, formatDate, toDate, isWinterSeason } = require('../utils/time')
 const { resolveCurrentPunchIndex, evaluateStatus, shouldReplace } = require('./ruleEngine')
 
 const TEST_MODE = process.env.TEST_MODE === 'true'
@@ -785,15 +785,19 @@ class AttendanceService {
       acc[item.punch_index] = item
       return acc
     }, {})
-    const nodes = rules.map((rule) => ({
-      punchIndex: rule.punch_index,
-      startTime: rule.start_time,
-      endTime: rule.end_time,
-      winterStartTime: rule.winter_start_time,
-      checked: Boolean(recordByIndex[rule.punch_index]),
-      status: recordByIndex[rule.punch_index]?.status || 'PENDING',
-      punchedAt: recordByIndex[rule.punch_index]?.punched_at || null
-    }))
+    const nodes = rules.map((rule) => {
+      const now = new Date()
+      const effectiveStartTime = isWinterSeason(now) && rule.winter_start_time ? rule.winter_start_time : rule.start_time
+      return {
+        punchIndex: rule.punch_index,
+        startTime: effectiveStartTime,
+        endTime: rule.end_time,
+        winterStartTime: rule.winter_start_time,
+        checked: Boolean(recordByIndex[rule.punch_index]),
+        status: recordByIndex[rule.punch_index]?.status || 'PENDING',
+        punchedAt: recordByIndex[rule.punch_index]?.punched_at || null
+      }
+    })
     return {
       userId: user.id,
       userName: user.name,

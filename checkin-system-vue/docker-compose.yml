@@ -1,6 +1,7 @@
 services:
   mysql:
     image: mysql:8
+    platform: linux/arm64
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
       MYSQL_DATABASE: ${DB_NAME:-checkin}
@@ -18,6 +19,7 @@ services:
     build: ./server
     image: checkin-server:${IMAGE_TAG:-latest}
     environment:
+      TZ: Asia/Shanghai
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: ${DB_USER:-root}
