@@ -5,7 +5,7 @@ class AttendanceRepository {
 
   async findUserById(userId) {
     const [rows] = await this.db.query(
-      `SELECT u.id, u.name, u.department_id, u.role_id, r.code AS role_code, r.punch_model, r.default_fence_id
+      `SELECT u.id, u.name, u.phone, u.department_id, u.role_id, r.code AS role_code, r.punch_model, r.default_fence_id
        FROM users u
        JOIN roles r ON r.id = u.role_id
        WHERE u.id=? AND u.is_active=1`,
@@ -14,9 +14,22 @@ class AttendanceRepository {
     return rows[0] || null
   }
 
+  async findUserByPhone(phone) {
+    if (!phone) return null
+    const [rows] = await this.db.query(
+      `SELECT u.id, u.name, u.phone, u.department_id, u.role_id, r.code AS role_code, r.punch_model, r.default_fence_id
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+       WHERE u.phone=? AND u.is_active=1
+       LIMIT 1`,
+      [String(phone).trim()]
+    )
+    return rows[0] || null
+  }
+
   async findUserWithRoleById(userId) {
     const [rows] = await this.db.query(
-      `SELECT u.id, u.name, u.department_id, u.role_id, u.is_active, r.code AS role_code, r.name AS role_name
+      `SELECT u.id, u.name, u.phone, u.department_id, u.role_id, u.is_active, r.code AS role_code, r.name AS role_name
        FROM users u
        JOIN roles r ON r.id = u.role_id
        WHERE u.id=?
@@ -213,7 +226,7 @@ class AttendanceRepository {
       conditions.push('u.is_active=1')
     }
     const [rows] = await this.db.query(
-      `SELECT u.id, u.name, u.department_id, d.name AS department_name, u.role_id, r.code AS role_code, r.name AS role_name, u.is_active, u.created_at
+      `SELECT u.id, u.name, u.phone, u.department_id, d.name AS department_name, u.role_id, r.code AS role_code, r.name AS role_name, u.is_active, u.created_at
        FROM users u
        JOIN departments d ON d.id = u.department_id
        JOIN roles r ON r.id = u.role_id
@@ -226,18 +239,18 @@ class AttendanceRepository {
 
   async createUser(payload) {
     await this.db.query(
-      `INSERT INTO users (id, name, department_id, role_id, is_active)
-       VALUES (?, ?, ?, ?, ?)`,
-      [payload.id, payload.name, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0]
+      `INSERT INTO users (id, name, phone, department_id, role_id, is_active)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [payload.id, payload.name, payload.phone || null, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0]
     )
   }
 
   async updateUser(payload) {
     await this.db.query(
       `UPDATE users
-       SET name=?, department_id=?, role_id=?, is_active=?
+       SET name=?, phone=?, department_id=?, role_id=?, is_active=?
        WHERE id=?`,
-      [payload.name, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0, payload.id]
+      [payload.name, payload.phone || null, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0, payload.id]
     )
   }
 
@@ -248,6 +261,22 @@ class AttendanceRepository {
        ORDER BY id ASC`
     )
     return rows
+  }
+
+  async findDepartmentByName(name) {
+    const [rows] = await this.db.query(
+      `SELECT id, name FROM departments WHERE name=? LIMIT 1`,
+      [name]
+    )
+    return rows[0] || null
+  }
+
+  async findRoleByCode(code) {
+    const [rows] = await this.db.query(
+      `SELECT id, code, name FROM roles WHERE code=? LIMIT 1`,
+      [code]
+    )
+    return rows[0] || null
   }
 
   async createDepartment(name) {
@@ -287,6 +316,15 @@ class AttendanceRepository {
   }
 
   async upsertShiftRule(payload) {
+    if (payload.id) {
+      await this.db.query(
+        `UPDATE role_shift_rules
+         SET role_id=?, punch_index=?, start_time=?, end_time=?, winter_start_time=?, required_fence_id=?
+         WHERE id=?`,
+        [payload.roleId, payload.punchIndex, payload.startTime, payload.endTime, payload.winterStartTime || null, payload.requiredFenceId || null, payload.id]
+      )
+      return
+    }
     await this.db.query(
       `INSERT INTO role_shift_rules (role_id, punch_index, start_time, end_time, winter_start_time, required_fence_id)
        VALUES (?, ?, ?, ?, ?, ?)

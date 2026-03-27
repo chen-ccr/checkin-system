@@ -172,6 +172,19 @@ function buildV1Router(attendanceService) {
     })
   })
 
+  router.post('/h5/user/auto-create', async (req, res, next) => {
+    try {
+      const result = await attendanceService.autoCreateUser({
+        userId: req.body.userId,
+        mobile: req.body.mobile,
+        name: req.body.name
+      })
+      res.json({ code: 'OK', data: result })
+    } catch (err) {
+      next(err)
+    }
+  })
+
   router.get('/checkins', requireAuth, async (req, res, next) => {
     try {
       const stats = await attendanceService.getDailyStats(req.query.date)
@@ -255,6 +268,7 @@ function buildV1Router(attendanceService) {
   router.post('/admin/shift-rules', requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), async (req, res, next) => {
     try {
       const data = await attendanceService.saveShiftRuleForAdmin({
+        id: req.body.id,
         roleId: req.body.roleId,
         punchIndex: req.body.punchIndex,
         startTime: req.body.startTime,

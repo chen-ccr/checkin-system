@@ -18,26 +18,27 @@ export async function ensureLogin() {
 
   // 1️⃣ 先尝试获取用户信息
   let res = await window.CP2.getUserInfo()
-  console.log('getUserInfo 返回:', res)
+  console.log('getUserInfo 返回:', JSON.stringify(res))
 
-  // 2️⃣ 检查返回格式
-  if (!res || res.code !== "1") {
+  // 2️⃣ 检查返回格式（兼容code为数字1或字符串"1"）
+  const code = String(res?.code ?? '')
+  if (code !== '1') {
     console.log('未登录或获取失败，拉起登录')
     await window.CP2.showLogin()
     res = await window.CP2.getUserInfo()
-    console.log('登录后 getUserInfo 返回:', res)
-    if (res.code !== "1") {
+    console.log('登录后 getUserInfo 返回:', JSON.stringify(res))
+    if (String(res?.code ?? '') !== '1') {
       throw new Error('登录后仍获取用户失败')
     }
   }
 
   // 3️⃣ 检查是否已登录（login字段可能不存在）
-  if (res.data?.login && res.data.login !== "1") {
+  if (res.data?.login && String(res.data.login) !== '1') {
     console.log('login状态不为1，拉起登录')
     await window.CP2.showLogin()
     res = await window.CP2.getUserInfo()
-    console.log('登录后 getUserInfo 返回:', res)
-    if (res.code !== "1") {
+    console.log('登录后 getUserInfo 返回:', JSON.stringify(res))
+    if (String(res?.code ?? '') !== '1') {
       throw new Error('登录后仍获取用户失败')
     }
   }
@@ -47,7 +48,7 @@ export async function ensureLogin() {
 
   return {
     userId: data.accountId,
-    name: data.user?.realName,
+    name: data.user?.realName || data.user?.realname,
     avatar: data.user?.image_url,
     nickName: data.user?.nick_name,
     mobile: data.mobile,

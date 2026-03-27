@@ -66,10 +66,12 @@ async function migrate(db) {
     CREATE TABLE IF NOT EXISTS users (
       id VARCHAR(64) PRIMARY KEY,
       name VARCHAR(64) NOT NULL,
+      phone VARCHAR(32) NULL,
       department_id INT NOT NULL,
       role_id INT NOT NULL,
       is_active TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_users_phone(phone),
       CONSTRAINT fk_users_department FOREIGN KEY (department_id) REFERENCES departments(id),
       CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id)
     )

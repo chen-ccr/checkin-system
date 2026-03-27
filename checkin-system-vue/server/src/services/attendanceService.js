@@ -267,6 +267,7 @@ class AttendanceService {
     const data = {
       id: String(payload.id || '').trim(),
       name: String(payload.name || '').trim(),
+      phone: payload.phone ? String(payload.phone).trim() : null,
       roleId: Number(payload.roleId),
       departmentId: Number(departmentId),
       isActive: payload.isActive !== false
@@ -281,6 +282,53 @@ class AttendanceService {
     }
     await this.repository.updateUser(data)
     return { updated: true }
+  }
+
+  async autoCreateUser(payload) {
+    const { userId, mobile, name } = payload
+    if (!mobile) {
+      throw new AppError(errorCodes.INVALID_INPUT, '手机号不能为空', 422)
+    }
+    if (!userId) {
+      throw new AppError(errorCodes.INVALID_INPUT, 'userId不能为空', 422)
+    }
+    const existingByPhone = await this.repository.findUserByPhone(mobile)
+    if (existingByPhone) {
+      return {
+        userId: existingByPhone.id,
+        name: existingByPhone.name,
+        mobile: existingByPhone.phone,
+        departmentId: Number(existingByPhone.department_id),
+        roleId: Number(existingByPhone.role_id),
+        isNew: false
+      }
+    }
+    const unknownDept = await this.repository.findDepartmentByName('未知')
+    let departmentId
+    if (unknownDept) {
+      departmentId = unknownDept.id
+    } else {
+      const result = await this.repository.createDepartment('未知')
+      departmentId = result
+    }
+    const staffRole = await this.repository.findRoleByCode('STAFF')
+    const roleId = staffRole ? staffRole.id : 1
+    await this.repository.createUser({
+      id: String(userId),
+      name: name || '未知',
+      phone: mobile,
+      departmentId,
+      roleId,
+      isActive: true
+    })
+    return {
+      userId: String(userId),
+      name: name || '未知',
+      mobile,
+      departmentId,
+      roleId,
+      isNew: true
+    }
   }
 
   async saveDepartmentForAdmin(payload) {
@@ -314,6 +362,7 @@ class AttendanceService {
 
   async saveShiftRuleForAdmin(payload) {
     const data = {
+      id: payload.id ? Number(payload.id) : null,
       roleId: Number(payload.roleId),
       punchIndex: Number(payload.punchIndex),
       startTime: payload.startTime,
@@ -325,7 +374,7 @@ class AttendanceService {
       throw new AppError(errorCodes.INVALID_INPUT, '班次参数不完整', 422)
     }
     await this.repository.upsertShiftRule(data)
-    return { updated: true }
+    return { updated: !!payload.id }
   }
 
   async getDashboard(auth, query = {}) {

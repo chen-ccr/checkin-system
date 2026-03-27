@@ -287,14 +287,40 @@ async function checkFence(loc) {
 }
 
 async function handleCheckin() {
-  if (!user.value?.userId) {
-    msg.value = '用户信息加载中，请稍后重试'
+  if (!user.value) {
+    try {
+      user.value = await ensureLogin()
+    } catch (e) {
+      msg.value = '获取用户信息失败，请检查登录状态'
+      return
+    }
+  }
+
+  if (!user.value.userId && !user.value.mobile) {
+    msg.value = '无法获取用户信息，请确保已登录'
     return
   }
+
   if (loading.value) return
   loading.value = true
-  msg.value = '正在定位并提交...'
+  msg.value = '正在处理...'
   try {
+    let checkinUserId = user.value.userId
+    if (user.value.mobile) {
+      try {
+        const autoRes = await api.post('/h5/user/auto-create', {
+          userId: user.value.userId || `temp_${Date.now()}`,
+          mobile: user.value.mobile,
+          name: user.value.name || '未知'
+        })
+        if (autoRes.data.code === 'OK') {
+          checkinUserId = autoRes.data.data.userId
+          console.log('auto-create结果:', autoRes.data.data)
+        }
+      } catch (autoErr) {
+        console.warn('auto-create失败:', autoErr)
+      }
+    }
     const loc = await getLocation()
     console.log('定位成功:', loc)
     const precheck = await checkFence(loc)
@@ -304,7 +330,7 @@ async function handleCheckin() {
       return
     }
     const payload = {
-      userId: user.value.userId,
+      userId: checkinUserId,
       lat: loc.lat,
       lng: loc.lng
     }

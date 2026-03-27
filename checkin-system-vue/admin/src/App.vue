@@ -10,10 +10,10 @@ const bootstrap = ref({ departments: [], roles: [], geofences: [], shiftRules: [
 const users = ref([])
 const dashboard = ref({ summary: { expected: 0, actual: 0, late: 0, leave: 0, missing: 0 }, abnormalUsers: [], records: [], range: {} })
 const query = ref({ mode: 'day', date: '', departmentId: '', userId: '' })
-const userForm = ref({ id: '', name: '', departmentId: '', roleId: '', isActive: true })
+const userForm = ref({ id: '', name: '', phone: '', departmentId: '', roleId: '', isActive: true })
 const departmentForm = ref({ name: '' })
 const fenceForm = ref({ id: '', name: '', lat: '', lng: '', radius: '', isActive: true })
-const ruleForm = ref({ roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' })
+const ruleForm = ref({ id: '', roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' })
 const activeTab = ref('dashboard')
 const loading = ref(false)
 const msg = ref('')
@@ -80,8 +80,81 @@ async function loadUsers() {
 async function saveUser() {
   await api.post('/admin/users', userForm.value)
   msg.value = '用户保存成功'
-  userForm.value = { id: '', name: '', departmentId: userForm.value.departmentId || '', roleId: '', isActive: true }
+  userForm.value = { id: '', name: '', phone: '', departmentId: userForm.value.departmentId || '', roleId: '', isActive: true }
   await loadUsers()
+}
+
+function editUser(u) {
+  userForm.value = {
+    id: u.id,
+    name: u.name,
+    phone: u.phone || '',
+    departmentId: String(u.department_id),
+    roleId: String(u.role_id),
+    isActive: Number(u.is_active) === 1
+  }
+  msg.value = ''
+}
+
+async function importUsers(file) {
+  if (!file) return
+  msg.value = '导入中...'
+  try {
+    const ExcelJS = await import('exceljs')
+    const workbook = new ExcelJS.default.Workbook()
+    await workbook.xlsx.load(file)
+    const sheet = workbook.getWorksheet(1)
+    const rows = []
+    sheet.eachRow((row, rowNum) => {
+      if (rowNum === 1) return
+      rows.push({
+        department: row.getCell(1).value,
+        name: row.getCell(2).value,
+        phone: String(row.getCell(3).value || '').trim(),
+        role: String(row.getCell(4).value || '').trim()
+      })
+    })
+    const valid = rows.filter((r) => r.department && r.name && r.phone)
+    if (valid.length === 0) {
+      msg.value = '导入失败：未找到有效的部门+姓名+手机号数据'
+      return
+    }
+    let created = 0
+    for (const item of valid) {
+      let dept = bootstrap.value.departments.find((d) => d.name === item.department)
+      if (!dept) {
+        await api.post('/admin/departments', { name: item.department })
+        await loadBootstrap()
+        dept = bootstrap.value.departments.find((d) => d.name === item.department)
+      }
+      if (!dept) continue
+      const phoneExists = users.value.some((u) => u.phone === item.phone)
+      if (!phoneExists) {
+        const role = bootstrap.value.roles.find((r) => r.name === item.role)
+        await api.post('/admin/users', {
+          id: `import_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: item.name,
+          phone: item.phone,
+          departmentId: String(dept.id),
+          roleId: role ? String(role.id) : String(bootstrap.value.roles[0]?.id || 1),
+          isActive: true
+        })
+        created++
+      }
+    }
+    msg.value = `导入完成：新增 ${created} 个用户`
+    await loadUsers()
+  } catch (err) {
+    msg.value = '导入失败：' + (err.message || '文件格式错误')
+  }
+}
+
+function handleFileChange(e) {
+  const file = e.target.files[0]
+  if (file) {
+    importUsers(file)
+    e.target.value = ''
+  }
 }
 
 async function saveDepartment() {
@@ -240,8 +313,31 @@ function updateFenceMap() {
 async function saveShiftRule() {
   await api.post('/admin/shift-rules', ruleForm.value)
   msg.value = '班次规则保存成功'
-  ruleForm.value = { roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' }
+  ruleForm.value = { id: '', roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' }
   await loadBootstrap()
+}
+
+function editShiftRule(r) {
+  ruleForm.value = {
+    id: r.id,
+    roleId: String(r.role_id),
+    punchIndex: String(r.punch_index),
+    startTime: r.start_time,
+    endTime: r.end_time,
+    winterStartTime: r.winter_start_time || '',
+    requiredFenceId: r.required_fence_id ? String(r.required_fence_id) : ''
+  }
+  msg.value = ''
+}
+
+function clearRuleForm() {
+  ruleForm.value = { id: '', roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' }
+  msg.value = ''
+}
+
+async function deleteShiftRule(id) {
+  if (!confirm('确定删除该班次规则吗？')) return
+  msg.value = '删除功能需在后端实现'
 }
 
 async function loadDashboard() {
@@ -388,10 +484,13 @@ watch(activeTab, (newTab) => {
             <option v-for="d in bootstrap.departments" :key="d.id" :value="String(d.id)">{{ d.name }}</option>
           </select>
           <button @click="loadUsers">筛选</button>
+          <label style="margin-left: 12px;">导入Excel</label>
+          <input type="file" accept=".xlsx,.xls" @change="handleFileChange" style="padding: 6px;" />
         </div>
         <div class="row">
           <input v-model="userForm.id" placeholder="用户ID" />
           <input v-model="userForm.name" placeholder="姓名" />
+          <input v-model="userForm.phone" placeholder="手机号" />
           <select v-model="userForm.departmentId">
             <option value="" disabled>选择部门</option>
             <option v-for="d in bootstrap.departments" :key="d.id" :value="String(d.id)">{{ d.name }}</option>
@@ -403,17 +502,20 @@ watch(activeTab, (newTab) => {
           <label><input type="checkbox" v-model="userForm.isActive" /> 启用</label>
           <button @click="saveUser">保存</button>
         </div>
+        <p style="font-size: 12px; color: #666; margin: 4px 0;">💡 Excel导入格式：第1列=部门，第2列=姓名，第3列=手机号，第4列=角色</p>
         <table>
           <thead>
-            <tr><th>ID</th><th>姓名</th><th>部门</th><th>角色</th><th>状态</th></tr>
+            <tr><th>ID</th><th>姓名</th><th>手机号</th><th>部门</th><th>角色</th><th>状态</th><th>操作</th></tr>
           </thead>
           <tbody>
             <tr v-for="u in users" :key="u.id">
               <td>{{ u.id }}</td>
               <td>{{ u.name }}</td>
+              <td>{{ u.phone || '-' }}</td>
               <td>{{ u.department_name }}</td>
               <td>{{ u.role_name }}</td>
               <td>{{ Number(u.is_active) === 1 ? '启用' : '停用' }}</td>
+              <td><button @click="editUser(u)" style="padding: 4px 8px; font-size: 12px;">编辑</button></td>
             </tr>
           </tbody>
         </table>
@@ -467,11 +569,12 @@ watch(activeTab, (newTab) => {
             <option value="">默认围栏</option>
             <option v-for="f in bootstrap.geofences" :key="f.id" :value="String(f.id)">{{ f.name }}</option>
           </select>
-          <button @click="saveShiftRule">保存</button>
+          <button @click="saveShiftRule">{{ ruleForm.id ? '更新' : '保存' }}</button>
+          <button @click="clearRuleForm" style="background: #f0f0f0">清空</button>
         </div>
         <table>
           <thead>
-            <tr><th>角色</th><th>节点</th><th>时段</th><th>冬季起始</th><th>指定围栏</th></tr>
+            <tr><th>角色</th><th>节点</th><th>时段</th><th>冬季起始</th><th>指定围栏</th><th>操作</th></tr>
           </thead>
           <tbody>
             <tr v-for="r in bootstrap.shiftRules" :key="r.id">
@@ -480,6 +583,7 @@ watch(activeTab, (newTab) => {
               <td>{{ r.start_time }} - {{ r.end_time }}</td>
               <td>{{ r.winter_start_time || '-' }}</td>
               <td>{{ r.fence_name || '-' }}</td>
+              <td><button @click="editShiftRule(r)" style="padding: 4px 8px; font-size: 12px;">编辑</button></td>
             </tr>
           </tbody>
         </table>
