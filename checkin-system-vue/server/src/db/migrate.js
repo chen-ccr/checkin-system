@@ -66,6 +66,7 @@ async function migrate(db) {
     CREATE TABLE IF NOT EXISTS users (
       id VARCHAR(64) PRIMARY KEY,
       name VARCHAR(64) NOT NULL,
+      nickname VARCHAR(64) NULL,
       phone VARCHAR(32) NULL,
       department_id INT NOT NULL,
       role_id INT NOT NULL,
@@ -76,6 +77,17 @@ async function migrate(db) {
       CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles(id)
     )
   `)
+
+  const hasNicknameCol = await hasColumn(db, 'users', 'nickname')
+  if (!hasNicknameCol) {
+    await db.query('ALTER TABLE users ADD COLUMN nickname VARCHAR(64) NULL AFTER name')
+  }
+
+  const hasPhoneCol = await hasColumn(db, 'users', 'phone')
+  if (!hasPhoneCol) {
+    await db.query('ALTER TABLE users ADD COLUMN phone VARCHAR(32) NULL AFTER nickname')
+    await db.query('ALTER TABLE users ADD UNIQUE KEY uk_users_phone(phone)')
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS role_shift_rules (

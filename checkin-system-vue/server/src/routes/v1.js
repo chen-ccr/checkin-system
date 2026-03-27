@@ -172,12 +172,23 @@ function buildV1Router(attendanceService) {
     })
   })
 
+  router.get('/h5/user/info', async (req, res, next) => {
+    try {
+      const { mobile } = req.query
+      const result = await attendanceService.getUserInfoByMobile(mobile)
+      res.json({ code: 'OK', data: result })
+    } catch (err) {
+      next(err)
+    }
+  })
+
   router.post('/h5/user/auto-create', async (req, res, next) => {
     try {
       const result = await attendanceService.autoCreateUser({
         userId: req.body.userId,
         mobile: req.body.mobile,
-        name: req.body.name
+        name: req.body.name,
+        nickName: req.body.nickName
       })
       res.json({ code: 'OK', data: result })
     } catch (err) {
@@ -235,6 +246,24 @@ function buildV1Router(attendanceService) {
     try {
       const data = await attendanceService.saveUserForAdmin(req.auth, req.body)
       res.json({ code: 'OK', message: '用户保存成功', data })
+    } catch (err) {
+      next(err)
+    }
+  })
+
+  router.delete('/admin/users/:id', requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), async (req, res, next) => {
+    try {
+      await attendanceService.deleteUser(req.params.id)
+      res.json({ code: 'OK', message: '用户删除成功' })
+    } catch (err) {
+      next(err)
+    }
+  })
+
+  router.delete('/admin/shift-rules/:id', requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), async (req, res, next) => {
+    try {
+      await attendanceService.deleteShiftRule(req.params.id)
+      res.json({ code: 'OK', message: '班次规则删除成功' })
     } catch (err) {
       next(err)
     }

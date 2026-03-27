@@ -267,6 +267,7 @@ class AttendanceService {
     const data = {
       id: String(payload.id || '').trim(),
       name: String(payload.name || '').trim(),
+      nickname: payload.nickname ? String(payload.nickname).trim() : null,
       phone: payload.phone ? String(payload.phone).trim() : null,
       roleId: Number(payload.roleId),
       departmentId: Number(departmentId),
@@ -284,8 +285,37 @@ class AttendanceService {
     return { updated: true }
   }
 
+  async deleteUser(userId) {
+    await this.repository.deleteUser(userId)
+  }
+
+  async deleteShiftRule(id) {
+    await this.repository.deleteShiftRule(id)
+  }
+
+  async getUserInfoByMobile(mobile) {
+    if (!mobile) {
+      return { exists: false }
+    }
+    const user = await this.repository.findUserByPhone(String(mobile).trim())
+    if (!user) {
+      return { exists: false }
+    }
+    const dept = await this.repository.findDepartmentById(user.department_id)
+    return {
+      exists: true,
+      userId: user.id,
+      name: user.nickname || user.name,
+      nickname: user.nickname,
+      mobile: user.phone,
+      departmentId: Number(user.department_id),
+      departmentName: dept?.name || '未知',
+      roleId: Number(user.role_id)
+    }
+  }
+
   async autoCreateUser(payload) {
-    const { userId, mobile, name } = payload
+    const { userId, mobile, name, nickName } = payload
     if (!mobile) {
       throw new AppError(errorCodes.INVALID_INPUT, '手机号不能为空', 422)
     }
@@ -294,11 +324,17 @@ class AttendanceService {
     }
     const existingByPhone = await this.repository.findUserByPhone(mobile)
     if (existingByPhone) {
+      const dept = await this.repository.findDepartmentById(existingByPhone.department_id)
+      if (!existingByPhone.nickname && nickName) {
+        await this.repository.updateUserNickname(existingByPhone.id, nickName)
+        existingByPhone.nickname = nickName
+      }
       return {
         userId: existingByPhone.id,
-        name: existingByPhone.name,
+        name: existingByPhone.nickname || existingByPhone.name,
         mobile: existingByPhone.phone,
         departmentId: Number(existingByPhone.department_id),
+        departmentName: dept?.name || '未知',
         roleId: Number(existingByPhone.role_id),
         isNew: false
       }
@@ -316,6 +352,7 @@ class AttendanceService {
     await this.repository.createUser({
       id: String(userId),
       name: name || '未知',
+      nickname: nickName || null,
       phone: mobile,
       departmentId,
       roleId,
@@ -323,9 +360,10 @@ class AttendanceService {
     })
     return {
       userId: String(userId),
-      name: name || '未知',
+      name: nickName || name || '未知',
       mobile,
       departmentId,
+      departmentName: '未知',
       roleId,
       isNew: true
     }

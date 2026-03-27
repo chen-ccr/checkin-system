@@ -10,13 +10,17 @@ const bootstrap = ref({ departments: [], roles: [], geofences: [], shiftRules: [
 const users = ref([])
 const dashboard = ref({ summary: { expected: 0, actual: 0, late: 0, leave: 0, missing: 0 }, abnormalUsers: [], records: [], range: {} })
 const query = ref({ mode: 'day', date: '', departmentId: '', userId: '' })
-const userForm = ref({ id: '', name: '', phone: '', departmentId: '', roleId: '', isActive: true })
+const userForm = ref({ id: '', nickname: '', name: '', phone: '', departmentId: '', roleId: '', isActive: true })
 const departmentForm = ref({ name: '' })
 const fenceForm = ref({ id: '', name: '', lat: '', lng: '', radius: '', isActive: true })
 const ruleForm = ref({ id: '', roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' })
 const activeTab = ref('dashboard')
 const loading = ref(false)
 const msg = ref('')
+const userModalVisible = ref(false)
+const userModalTitle = ref('新增用户')
+const ruleModalVisible = ref(false)
+const ruleModalTitle = ref('新增班次')
 
 let fenceMap = null
 let fenceMarker = null
@@ -80,20 +84,44 @@ async function loadUsers() {
 async function saveUser() {
   await api.post('/admin/users', userForm.value)
   msg.value = '用户保存成功'
-  userForm.value = { id: '', name: '', phone: '', departmentId: userForm.value.departmentId || '', roleId: '', isActive: true }
+  userModalVisible.value = false
+  userForm.value = { id: '', nickname: '', name: '', phone: '', departmentId: userForm.value.departmentId || '', roleId: '', isActive: true }
   await loadUsers()
 }
 
-function editUser(u) {
-  userForm.value = {
-    id: u.id,
-    name: u.name,
-    phone: u.phone || '',
-    departmentId: String(u.department_id),
-    roleId: String(u.role_id),
-    isActive: Number(u.is_active) === 1
+function openUserModal(user = null) {
+  if (user) {
+    userModalTitle.value = '编辑用户'
+    userForm.value = {
+      id: user.id,
+      nickname: user.nickname || '',
+      name: user.name,
+      phone: user.phone || '',
+      departmentId: String(user.department_id),
+      roleId: String(user.role_id),
+      isActive: Number(user.is_active) === 1
+    }
+  } else {
+    userModalTitle.value = '新增用户'
+    userForm.value = { id: '', nickname: '', name: '', phone: '', departmentId: userForm.value.departmentId || '', roleId: '', isActive: true }
   }
   msg.value = ''
+  userModalVisible.value = true
+}
+
+function editUser(u) {
+  openUserModal(u)
+}
+
+async function deleteUser(id) {
+  if (!confirm('确定删除该用户吗？')) return
+  try {
+    await api.delete(`/admin/users/${id}`)
+    msg.value = '用户删除成功'
+    await loadUsers()
+  } catch (err) {
+    msg.value = err.response?.data?.message || '删除失败'
+  }
 }
 
 async function importUsers(file) {
@@ -317,27 +345,43 @@ async function saveShiftRule() {
   await loadBootstrap()
 }
 
-function editShiftRule(r) {
-  ruleForm.value = {
-    id: r.id,
-    roleId: String(r.role_id),
-    punchIndex: String(r.punch_index),
-    startTime: r.start_time,
-    endTime: r.end_time,
-    winterStartTime: r.winter_start_time || '',
-    requiredFenceId: r.required_fence_id ? String(r.required_fence_id) : ''
+function openRuleModal(rule = null) {
+  if (rule) {
+    ruleModalTitle.value = '编辑班次'
+    ruleForm.value = {
+      id: rule.id,
+      roleId: String(rule.role_id),
+      punchIndex: String(rule.punch_index),
+      startTime: rule.start_time,
+      endTime: rule.end_time,
+      winterStartTime: rule.winter_start_time || '',
+      requiredFenceId: rule.required_fence_id ? String(rule.required_fence_id) : ''
+    }
+  } else {
+    ruleModalTitle.value = '新增班次'
+    ruleForm.value = { id: '', roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' }
   }
   msg.value = ''
+  ruleModalVisible.value = true
 }
 
-function clearRuleForm() {
-  ruleForm.value = { id: '', roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' }
-  msg.value = ''
+function editShiftRule(r) {
+  openRuleModal(r)
 }
 
 async function deleteShiftRule(id) {
   if (!confirm('确定删除该班次规则吗？')) return
-  msg.value = '删除功能需在后端实现'
+  try {
+    await api.delete(`/admin/shift-rules/${id}`)
+    msg.value = '班次规则删除成功'
+    await loadBootstrap()
+  } catch (err) {
+    msg.value = err.response?.data?.message || '删除失败'
+  }
+}
+
+function clearRuleForm() {
+  openRuleModal(null)
 }
 
 async function loadDashboard() {
@@ -484,38 +528,27 @@ watch(activeTab, (newTab) => {
             <option v-for="d in bootstrap.departments" :key="d.id" :value="String(d.id)">{{ d.name }}</option>
           </select>
           <button @click="loadUsers">筛选</button>
+          <button @click="openUserModal()" style="background: #22c55e; margin-left: 8px;">新增用户</button>
           <label style="margin-left: 12px;">导入Excel</label>
           <input type="file" accept=".xlsx,.xls" @change="handleFileChange" style="padding: 6px;" />
-        </div>
-        <div class="row">
-          <input v-model="userForm.id" placeholder="用户ID" />
-          <input v-model="userForm.name" placeholder="姓名" />
-          <input v-model="userForm.phone" placeholder="手机号" />
-          <select v-model="userForm.departmentId">
-            <option value="" disabled>选择部门</option>
-            <option v-for="d in bootstrap.departments" :key="d.id" :value="String(d.id)">{{ d.name }}</option>
-          </select>
-          <select v-model="userForm.roleId">
-            <option value="" disabled>选择角色</option>
-            <option v-for="r in bootstrap.roles" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
-          </select>
-          <label><input type="checkbox" v-model="userForm.isActive" /> 启用</label>
-          <button @click="saveUser">保存</button>
         </div>
         <p style="font-size: 12px; color: #666; margin: 4px 0;">💡 Excel导入格式：第1列=部门，第2列=姓名，第3列=手机号，第4列=角色</p>
         <table>
           <thead>
-            <tr><th>ID</th><th>姓名</th><th>手机号</th><th>部门</th><th>角色</th><th>状态</th><th>操作</th></tr>
+            <tr><th>昵称</th><th>姓名</th><th>手机号</th><th>部门</th><th>角色</th><th>状态</th><th>操作</th></tr>
           </thead>
           <tbody>
             <tr v-for="u in users" :key="u.id">
-              <td>{{ u.id }}</td>
+              <td>{{ u.nickname || '-' }}</td>
               <td>{{ u.name }}</td>
               <td>{{ u.phone || '-' }}</td>
               <td>{{ u.department_name }}</td>
               <td>{{ u.role_name }}</td>
               <td>{{ Number(u.is_active) === 1 ? '启用' : '停用' }}</td>
-              <td><button @click="editUser(u)" style="padding: 4px 8px; font-size: 12px;">编辑</button></td>
+              <td>
+                <button @click="editUser(u)" style="padding: 4px 8px; font-size: 12px;">编辑</button>
+                <button @click="deleteUser(u.id)" style="padding: 4px 8px; font-size: 12px; background: #ef4444; color: white; margin-left: 4px;">删除</button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -561,16 +594,7 @@ watch(activeTab, (newTab) => {
             <option value="" disabled>选择角色</option>
             <option v-for="r in bootstrap.roles" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
           </select>
-          <input v-model="ruleForm.punchIndex" placeholder="节点序号" />
-          <input v-model="ruleForm.startTime" placeholder="开始时间 08:00:00" />
-          <input v-model="ruleForm.endTime" placeholder="结束时间 08:30:00" />
-          <input v-model="ruleForm.winterStartTime" placeholder="冬季开始时间（可空）" />
-          <select v-model="ruleForm.requiredFenceId">
-            <option value="">默认围栏</option>
-            <option v-for="f in bootstrap.geofences" :key="f.id" :value="String(f.id)">{{ f.name }}</option>
-          </select>
-          <button @click="saveShiftRule">{{ ruleForm.id ? '更新' : '保存' }}</button>
-          <button @click="clearRuleForm" style="background: #f0f0f0">清空</button>
+          <button @click="openRuleModal()" style="background: #22c55e; margin-left: 8px;">新增班次</button>
         </div>
         <table>
           <thead>
@@ -583,10 +607,100 @@ watch(activeTab, (newTab) => {
               <td>{{ r.start_time }} - {{ r.end_time }}</td>
               <td>{{ r.winter_start_time || '-' }}</td>
               <td>{{ r.fence_name || '-' }}</td>
-              <td><button @click="editShiftRule(r)" style="padding: 4px 8px; font-size: 12px;">编辑</button></td>
+              <td>
+                <button @click="editShiftRule(r)" style="padding: 4px 8px; font-size: 12px;">编辑</button>
+                <button @click="deleteShiftRule(r.id)" style="padding: 4px 8px; font-size: 12px; background: #ef4444; color: white; margin-left: 4px;">删除</button>
+              </td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="userModalVisible" class="modal-overlay" @click.self="userModalVisible = false">
+        <div class="modal">
+          <h3>{{ userModalTitle }}</h3>
+          <div class="modal-body">
+            <div class="form-row">
+              <label>用户ID</label>
+              <input v-model="userForm.id" placeholder="用户ID" :disabled="!!userForm.id" />
+            </div>
+            <div class="form-row">
+              <label>昵称</label>
+              <input v-model="userForm.nickname" placeholder="昵称（优先显示）" />
+            </div>
+            <div class="form-row">
+              <label>姓名</label>
+              <input v-model="userForm.name" placeholder="姓名" />
+            </div>
+            <div class="form-row">
+              <label>手机号</label>
+              <input v-model="userForm.phone" placeholder="手机号" />
+            </div>
+            <div class="form-row">
+              <label>部门</label>
+              <select v-model="userForm.departmentId">
+                <option value="" disabled>选择部门</option>
+                <option v-for="d in bootstrap.departments" :key="d.id" :value="String(d.id)">{{ d.name }}</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>角色</label>
+              <select v-model="userForm.roleId">
+                <option value="" disabled>选择角色</option>
+                <option v-for="r in bootstrap.roles" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label><input type="checkbox" v-model="userForm.isActive" /> 启用</label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="saveUser" style="background: #1677ff; color: white;">保存</button>
+            <button @click="userModalVisible = false" style="background: #f0f0f0;">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="ruleModalVisible" class="modal-overlay" @click.self="ruleModalVisible = false">
+        <div class="modal">
+          <h3>{{ ruleModalTitle }}</h3>
+          <div class="modal-body">
+            <div class="form-row">
+              <label>角色</label>
+              <select v-model="ruleForm.roleId">
+                <option value="" disabled>选择角色</option>
+                <option v-for="r in bootstrap.roles" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>节点</label>
+              <input v-model="ruleForm.punchIndex" placeholder="节点（如 1）" type="number" />
+            </div>
+            <div class="form-row">
+              <label>开始时间</label>
+              <input v-model="ruleForm.startTime" placeholder="如 09:00" />
+            </div>
+            <div class="form-row">
+              <label>结束时间</label>
+              <input v-model="ruleForm.endTime" placeholder="如 18:00" />
+            </div>
+            <div class="form-row">
+              <label>冬季起始时间</label>
+              <input v-model="ruleForm.winterStartTime" placeholder="如 09:30（可选）" />
+            </div>
+            <div class="form-row">
+              <label>指定围栏</label>
+              <select v-model="ruleForm.requiredFenceId">
+                <option value="">不指定</option>
+                <option v-for="f in bootstrap.geofences" :key="f.id" :value="String(f.id)">{{ f.name }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="saveShiftRule" style="background: #1677ff; color: white;">保存</button>
+            <button @click="ruleModalVisible = false" style="background: #f0f0f0;">取消</button>
+          </div>
+        </div>
       </div>
 
       <p v-if="msg">{{ msg }}</p>
@@ -610,4 +724,12 @@ th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 1
 .warn { color: #d97706; }
 .danger { color: #dc2626; }
 .error { color: #dc2626; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: white; border-radius: 12px; padding: 20px; width: 400px; max-width: 90%; }
+.modal h3 { margin: 0 0 16px 0; font-size: 18px; }
+.modal-body { margin-bottom: 16px; }
+.form-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.form-row label { width: 90px; text-align: right; }
+.form-row input, .form-row select { flex: 1; }
+.modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
 </style>

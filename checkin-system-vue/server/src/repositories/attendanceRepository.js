@@ -226,7 +226,7 @@ class AttendanceRepository {
       conditions.push('u.is_active=1')
     }
     const [rows] = await this.db.query(
-      `SELECT u.id, u.name, u.phone, u.department_id, d.name AS department_name, u.role_id, r.code AS role_code, r.name AS role_name, u.is_active, u.created_at
+      `SELECT u.id, u.name, u.nickname, u.phone, u.department_id, d.name AS department_name, u.role_id, r.code AS role_code, r.name AS role_name, u.is_active, u.created_at
        FROM users u
        JOIN departments d ON d.id = u.department_id
        JOIN roles r ON r.id = u.role_id
@@ -239,18 +239,29 @@ class AttendanceRepository {
 
   async createUser(payload) {
     await this.db.query(
-      `INSERT INTO users (id, name, phone, department_id, role_id, is_active)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [payload.id, payload.name, payload.phone || null, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0]
+      `INSERT INTO users (id, name, nickname, phone, department_id, role_id, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [payload.id, payload.name, payload.nickname || null, payload.phone || null, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0]
     )
   }
 
   async updateUser(payload) {
     await this.db.query(
       `UPDATE users
-       SET name=?, phone=?, department_id=?, role_id=?, is_active=?
+       SET name=?, nickname=?, phone=?, department_id=?, role_id=?, is_active=?
        WHERE id=?`,
-      [payload.name, payload.phone || null, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0, payload.id]
+      [payload.name, payload.nickname || null, payload.phone || null, payload.departmentId, payload.roleId, payload.isActive ? 1 : 0, payload.id]
+    )
+  }
+
+  async deleteUser(userId) {
+    await this.db.query('DELETE FROM users WHERE id=?', [userId])
+  }
+
+  async updateUserNickname(userId, nickname) {
+    await this.db.query(
+      `UPDATE users SET nickname=? WHERE id=?`,
+      [nickname, userId]
     )
   }
 
@@ -261,6 +272,14 @@ class AttendanceRepository {
        ORDER BY id ASC`
     )
     return rows
+  }
+
+  async findDepartmentById(id) {
+    const [rows] = await this.db.query(
+      `SELECT id, name FROM departments WHERE id=? LIMIT 1`,
+      [id]
+    )
+    return rows[0] || null
   }
 
   async findDepartmentByName(name) {
@@ -331,6 +350,10 @@ class AttendanceRepository {
        ON DUPLICATE KEY UPDATE start_time=VALUES(start_time), end_time=VALUES(end_time), winter_start_time=VALUES(winter_start_time), required_fence_id=VALUES(required_fence_id)`,
       [payload.roleId, payload.punchIndex, payload.startTime, payload.endTime, payload.winterStartTime || null, payload.requiredFenceId || null]
     )
+  }
+
+  async deleteShiftRule(id) {
+    await this.db.query('DELETE FROM role_shift_rules WHERE id=?', [id])
   }
 
   async listApprovedAbsencesCoveringDate(bizDate) {

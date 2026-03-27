@@ -73,7 +73,24 @@ const queueCount = computed(() => getQueue().length)
 const checkedCount = computed(() => plan.value.filter((item) => item.checked).length)
 const pendingCount = computed(() => Math.max(0, plan.value.length - checkedCount.value))
 const lateCount = computed(() => plan.value.filter((item) => item.status === 'LATE').length)
-const nextNode = computed(() => plan.value.find((item) => !item.checked) || null)
+const nextNode = computed(() => {
+  const now = new Date()
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  for (const item of plan.value) {
+    if (item.checked) continue
+    const [startH, startM] = (item.startTime || '00:00').split(':').map(Number)
+    const [endH, endM] = (item.endTime || '23:59').split(':').map(Number)
+    const startMinutes = startH * 60 + startM
+    const endMinutes = endH * 60 + endM
+    if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {
+      return item
+    }
+    if (currentMinutes < startMinutes) {
+      return item
+    }
+  }
+  return plan.value.find((item) => !item.checked) || null
+})
 const summaryUnit = computed(() => (summaryLevel.value === 'user' ? '天' : '人'))
 const chartMax = computed(() => {
   const values = summaryData.value.bars.flatMap((item) => [Number(item.expected || 0), Number(item.actual || 0)])
@@ -93,6 +110,29 @@ async function ensureSummaryToken() {
   const res = await api.post('/auth/login', { userId: user.value.userId })
   authToken.value = res.data.data.token
   return authToken.value
+}
+
+async function loadUserInfoFromBackend() {
+  if (!user.value?.mobile) return
+  try {
+    const res = await api.get('/h5/user/info', {
+      params: { mobile: user.value.mobile }
+    })
+    if (res.data.code === 'OK' && res.data.data.exists) {
+      const info = res.data.data
+      user.value.userId = info.userId
+      user.value.departmentName = info.departmentName
+      if (info.nickname) {
+        user.value.nickName = info.nickname
+      }
+      if (info.name) {
+        user.value.name = info.name
+      }
+      console.log('✅ 后端用户信息已加载:', info)
+    }
+  } catch (err) {
+    console.warn('⚠️ 加载后端用户信息失败:', err)
+  }
 }
 
 async function loadSummaryAccess() {
@@ -306,15 +346,19 @@ async function handleCheckin() {
   msg.value = '正在处理...'
   try {
     let checkinUserId = user.value.userId
+    let userDepartmentName = ''
     if (user.value.mobile) {
       try {
         const autoRes = await api.post('/h5/user/auto-create', {
           userId: user.value.userId || `temp_${Date.now()}`,
           mobile: user.value.mobile,
-          name: user.value.name || '未知'
+          name: user.value.name || '未知',
+          nickName: user.value.nickName || ''
         })
         if (autoRes.data.code === 'OK') {
           checkinUserId = autoRes.data.data.userId
+          userDepartmentName = autoRes.data.data.departmentName || ''
+          user.value.departmentName = userDepartmentName
           console.log('auto-create结果:', autoRes.data.data)
         }
       } catch (autoErr) {
@@ -360,6 +404,7 @@ onMounted(async () => {
   try {
     user.value = await ensureLogin()
     console.log('✅ 用户信息已获取:', user.value)
+    await loadUserInfoFromBackend()
     setDefaultCustomRange()
     console.log('📡 开始 refreshAll')
     await refreshAll()
@@ -404,11 +449,11 @@ onUnmounted(() => {
         <div v-if="user" class="user-card">
           <div>
             <p class="label">姓名</p>
-            <p class="value">{{ user.name }}</p>
+            <p class="value">{{ user.nickName || user.name }}</p>
           </div>
           <div>
-            <p class="label">工号</p>
-            <p class="value">{{ user.userId }}</p>
+            <p class="label">部门</p>
+            <p class="value">{{ user.departmentName || '未知' }}</p>
           </div>
           <div>
             <p class="label">离线队列</p>
