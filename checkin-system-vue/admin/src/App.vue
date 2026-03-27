@@ -297,7 +297,8 @@ function initFenceMap() {
       })
 
       fenceMap.on('click', (e) => {
-        const { lng, lat } = e.lnglat
+        const lng = e.lnglat.getLng()
+        const lat = e.lnglat.getLat()
         console.log('Map clicked:', lat, lng)
         fenceForm.value.lat = lat.toFixed(6)
         fenceForm.value.lng = lng.toFixed(6)
