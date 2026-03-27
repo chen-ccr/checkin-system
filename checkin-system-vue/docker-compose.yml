@@ -1,38 +1,19 @@
 services:
-  mysql:
-    image: mysql:8
-    platform: linux/arm64
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
-      MYSQL_DATABASE: ${DB_NAME:-checkin}
-    ports:
-      - "${DB_PORT_EXPOSE:-3307}:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${DB_PASSWORD:-123456}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
   server:
     build: ./server
     image: checkin-server:${IMAGE_TAG:-latest}
     environment:
       TZ: Asia/Shanghai
-      DB_HOST: mysql
-      DB_PORT: 3306
+      DB_HOST: ${DB_HOST:-110.42.214.127}
+      DB_PORT: ${DB_PORT:-13306}
       DB_USER: ${DB_USER:-root}
-      DB_PASSWORD: ${DB_PASSWORD:-123456}
+      DB_PASSWORD: ${DB_PASSWORD:-hik12345}
       DB_NAME: ${DB_NAME:-checkin}
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       SUPER_ADMIN_IDS: ${SUPER_ADMIN_IDS:-test123}
       TEST_MODE: ${TEST_MODE:-false}
     ports:
       - "${SERVER_PORT:-3001}:3001"
-    depends_on:
-      mysql:
-        condition: service_healthy
     restart: unless-stopped
 
   h5:
@@ -52,6 +33,3 @@ services:
     depends_on:
       - server
     restart: unless-stopped
-
-volumes:
-  mysql_data:
