@@ -1,0 +1,35 @@
+services:
+  server:
+    build: ./server
+    image: checkin-server:latest
+    environment:
+      TZ: Asia/Shanghai
+      DB_HOST: 110.42.214.127
+      DB_PORT: 13306
+      DB_USER: root
+      DB_PASSWORD: hik12345
+      DB_NAME: checkin
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key}
+      SUPER_ADMIN_IDS: ${SUPER_ADMIN_IDS:-test123}
+      TEST_MODE: "false"
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  h5:
+    build: ./h5
+    image: checkin-h5:latest
+    ports:
+      - "8091:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+  admin:
+    build: ./admin
+    image: checkin-admin:latest
+    ports:
+      - "8090:80"
+    depends_on:
+      - server
+    restart: unless-stopped
