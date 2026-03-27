@@ -291,7 +291,7 @@ async function migrate(db) {
           const punchedAt = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m + (uid === 'staff001' && rule.punch_index === 1 ? 12 : 1), s || 0)
           const isLate = uid === 'staff001' && rule.punch_index === 1 && dayOffset < 3
           const lateMinutes = isLate ? 12 : 0
-          const status = isLate ? 'LATE' : 'NORMAL'
+          const status = isLate ? '迟到' : '正常'
           await db.query(
             `INSERT INTO checkins
              (user_id, biz_date, punch_index, punched_at, lat, lng, fence_id, distance_meters, status, late_minutes, is_offline, idempotency_key)

@@ -518,8 +518,8 @@ onUnmounted(() => {
                 <div class="chart-list">
                   <div class="chart-item" v-for="item in summaryData.bars" :key="item.id">
                     <div class="bar-values-top">
-                      <span>{{ item.actual }}</span>
                       <span>{{ item.expected }}</span>
+                      <span>{{ item.actual }}</span>
                     </div>
                     <div class="bars">
                       <div class="bar expected" :style="{ height: barHeight(item.expected) }"></div>

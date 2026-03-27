@@ -50,7 +50,7 @@ async function generateTestData() {
           const randomVariance = Math.floor(Math.random() * 10) - 5
           const isLate = Math.random() < 0.2 && rule.punch_index === 1
           const lateMinutes = isLate ? Math.floor(Math.random() * 30) + 5 : 0
-          const status = isLate ? 'LATE' : 'NORMAL'
+          const status = isLate ? '迟到' : '正常'
           
           const punchedAt = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m + (isLate ? lateMinutes : randomVariance), s || 0)
           
