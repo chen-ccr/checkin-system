@@ -528,7 +528,7 @@ watch(activeTab, (newTab) => {
             <option v-for="d in bootstrap.departments" :key="d.id" :value="String(d.id)">{{ d.name }}</option>
           </select>
           <button @click="loadUsers">筛选</button>
-          <button @click="openUserModal()" style="background: #22c55e; margin-left: 8px;">新增用户</button>
+          <button @click="openUserModal()" style="background: #1677ff; color: white; margin-left: 8px;">新增用户</button>
           <label style="margin-left: 12px;">导入Excel</label>
           <input type="file" accept=".xlsx,.xls" @change="handleFileChange" style="padding: 6px;" />
         </div>
@@ -594,7 +594,7 @@ watch(activeTab, (newTab) => {
             <option value="" disabled>选择角色</option>
             <option v-for="r in bootstrap.roles" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
           </select>
-          <button @click="openRuleModal()" style="background: #22c55e; margin-left: 8px;">新增班次</button>
+          <button @click="openRuleModal()" style="background: #1677ff; color: white; margin-left: 8px;">新增班次</button>
         </div>
         <table>
           <thead>
