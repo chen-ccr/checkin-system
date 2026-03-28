@@ -9,8 +9,8 @@ services:
       DB_USER: root
       DB_PASSWORD: hik12345
       DB_NAME: checkin
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key}
-      SUPER_ADMIN_IDS: ${SUPER_ADMIN_IDS:-test123}
+      JWT_SECRET: your-secret-key
+      SUPER_ADMIN_IDS: test123
       TEST_MODE: "false"
     ports:
       - "3001:3001"
