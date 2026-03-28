@@ -281,6 +281,16 @@ const mapLoading = ref(false)
 const mapError = ref('')
 
 function initFenceMap() {
+  mapLoading.value = true
+  mapError.value = ''
+
+  if (fenceMap) {
+    fenceMap.destroy()
+    fenceMap = null
+    geolocation = null
+    placeSearch = null
+  }
+
   let attempts = 0
   const maxAttempts = 30
 
@@ -298,120 +308,82 @@ function initFenceMap() {
     }
 
     if (window.AMap && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
-      if (fenceMap) {
-        fenceMap.destroy()
-        fenceMap = null
-      }
-      
-      mapContainer.innerHTML = ''
-      mapLoading.value = true
-      mapError.value = ''
-      
-      fenceMap = new AMap.Map('fence-map', {
-        zoom: 15,
-        center: [115.89925, 28.68503],
-        resizeEnable: true
-      })
-
-      fenceMap.on('click', (e) => {
-        const lng = e.lnglat.getLng()
-        const lat = e.lnglat.getLat()
-        fenceForm.value.lat = lat.toFixed(6)
-        fenceForm.value.lng = lng.toFixed(6)
-        updateFenceMap()
-      })
-
-      AMap.plugin(['AMap.Geolocation', 'AMap.CitySearch'], () => {
-        geolocation = new AMap.Geolocation({
-          enableHighAccuracy: true,
-          timeout: 10000,
-          showButton: true,
-          showMarker: true,
-          showCircle: true,
-          panToLocation: true,
-          zoomToAccuracy: true
-        })
-        fenceMap.addControl(geolocation)
+      try {
+        mapContainer.innerHTML = ''
         
-        geolocation.getCurrentPosition((status, result) => {
-          mapLoading.value = false
-          if (status === 'complete') {
-            const lat = result.position.lat
-            const lng = result.position.lng
-            fenceMap.setCenter([lng, lat])
-            mapError.value = ''
-          } else {
-            const citySearch = new AMap.CitySearch()
-            citySearch.getLocalCity((status, result) => {
-              mapLoading.value = false
-              if (status === 'complete' && result.info === 'OK') {
-                fenceMap.setCenter(result.city.center)
-                mapError.value = '精确定位失败，已定位到所在城市'
-              } else {
-                mapError.value = '定位失败，请手动选择位置或搜索'
-              }
-            })
-          }
+        fenceMap = new AMap.Map('fence-map', {
+          zoom: 15,
+          center: [115.89925, 28.68503],
+          resizeEnable: true
         })
-      })
 
-      AMap.plugin('AMap.PlaceSearch', () => {
-        placeSearch = new AMap.PlaceSearch({
-          pageSize: 10,
-          pageIndex: 1,
-          extensions: 'all',
-          city: '全国'
+        fenceMap.on('click', (e) => {
+          const lng = e.lnglat.getLng()
+          const lat = e.lnglat.getLat()
+          fenceForm.value.lat = lat.toFixed(6)
+          fenceForm.value.lng = lng.toFixed(6)
+          updateFenceMap()
         })
-      })
 
-      updateFenceMap()
-      mapLoading.value = false
+        AMap.plugin(['AMap.PlaceSearch'], () => {
+          placeSearch = new AMap.PlaceSearch({
+            pageSize: 10,
+            pageIndex: 1,
+            extensions: 'all'
+          })
+        })
+
+        AMap.plugin('AMap.CitySearch', () => {
+          const citySearch = new AMap.CitySearch()
+          citySearch.getLocalCity((status, result) => {
+            if (status === 'complete' && result.info === 'OK') {
+              fenceMap.setCenter(result.city.center)
+              fenceMap.setZoom(12)
+              mapError.value = ''
+            } else {
+              mapError.value = '定位失败，请手动选择位置或搜索'
+            }
+            mapLoading.value = false
+          })
+        })
+
+        updateFenceMap()
+      } catch (e) {
+        console.error('地图初始化失败:', e)
+        mapLoading.value = false
+        mapError.value = '地图初始化失败'
+      }
     } else if (attempts < maxAttempts) {
       setTimeout(tryInit, 300)
     } else {
       mapLoading.value = false
-      mapError.value = '地图加载超时，请刷新页面重试'
+      mapError.value = '地图加载超时'
     }
   }
 
-  if (fenceMap) {
-    fenceMap.destroy()
-    fenceMap = null
-  }
   setTimeout(tryInit, 300)
 }
 
-function searchPlace() {
+async function searchPlace() {
   if (!searchKeyword.value) {
     msg.value = '请输入搜索关键词'
     return
   }
-  if (!fenceMap) {
-    msg.value = '地图尚未加载完成'
-    return
-  }
-  
-  if (!placeSearch) {
-    AMap.plugin('AMap.PlaceSearch', () => {
-      placeSearch = new AMap.PlaceSearch({
-        pageSize: 10,
-        pageIndex: 1,
-        extensions: 'all',
-        city: '全国'
-      })
-      doSearch()
-    })
-  } else {
-    doSearch()
-  }
-}
 
-function doSearch() {
-  if (!placeSearch) {
-    msg.value = '搜索服务未就绪，请稍后重试'
+  msg.value = '搜索中...'
+  
+  try {
+    await initFenceMap()
+  } catch (e) {
+    msg.value = '地图未就绪，请稍后重试'
     return
   }
-  msg.value = '搜索中...'
+
+  if (!placeSearch) {
+    msg.value = '搜索服务未就绪，请刷新页面'
+    return
+  }
+
   placeSearch.search(searchKeyword.value, (status, result) => {
     msg.value = ''
     if (status === 'complete' && result.poiList && result.poiList.pois.length > 0) {
@@ -421,12 +393,8 @@ function doSearch() {
       fenceForm.value.lat = lat.toFixed(6)
       fenceForm.value.lng = lng.toFixed(6)
       updateFenceMap()
-      setTimeout(() => {
-        if (fenceMap) {
-          fenceMap.setCenter([lng, lat])
-          fenceMap.setZoom(16)
-        }
-      }, 100)
+      fenceMap.setCenter([lng, lat])
+      fenceMap.setZoom(16)
       msg.value = `已定位到: ${firstPoi.name}`
     } else {
       msg.value = '未找到相关位置，请尝试其他关键词'
@@ -715,12 +683,11 @@ watch(activeTab, (newTab) => {
           <button @click="clearFenceForm" style="background: #f0f0f0">清空</button>
         </div>
         <p style="font-size: 12px; color: #666; margin: 8px 0;">💡 搜索地点或点击地图选择位置，地图会自动定位到您的当前位置</p>
-        <div id="fence-map" style="height: 300px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; position: relative;">
-          <div v-if="mapLoading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666;">
-            地图加载中...
-          </div>
+        <div style="height: 300px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; position: relative; background: #f9fafb;">
+          <div v-if="mapLoading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; z-index: 1;">地图加载中...</div>
+          <div v-if="mapError" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #dc2626; z-index: 1;">{{ mapError }}</div>
+          <div id="fence-map" style="height: 100%; width: 100%;"></div>
         </div>
-        <p v-if="mapError" style="font-size: 12px; color: #dc2626; margin: 4px 0;">{{ mapError }}</p>
         <table>
           <thead>
             <tr><th>ID</th><th>名称</th><th>坐标</th><th>半径</th><th>状态</th><th>操作</th></tr>
