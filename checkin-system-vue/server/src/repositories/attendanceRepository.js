@@ -168,9 +168,11 @@ class AttendanceRepository {
   async listUserCheckins(userId, limit = 30) {
     const [rows] = await this.db.query(
       `SELECT c.id, c.biz_date, c.punch_index, c.punched_at, c.status, c.late_minutes, c.distance_meters, c.is_offline,
-              gf.name AS fence_name
+              gf.name AS fence_name, rsr.start_time, rsr.end_time
        FROM checkins c
        LEFT JOIN geofences gf ON gf.id = c.fence_id
+       LEFT JOIN users u ON u.id = c.user_id
+       LEFT JOIN role_shift_rules rsr ON rsr.role_id = u.role_id AND rsr.punch_index = c.punch_index
        WHERE c.user_id=?
        ORDER BY c.punched_at DESC
        LIMIT ?`,

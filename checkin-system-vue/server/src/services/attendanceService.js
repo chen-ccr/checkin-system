@@ -2,8 +2,8 @@ const AppError = require('../errors/AppError')
 const errorCodes = require('../constants/errorCodes')
 const ExcelJS = require('exceljs')
 const { ABSENCE_STATUS } = require('../constants/domain')
-const { distanceInMeters } = require('../utils/geo')
-const { resolveBusinessDate, formatDate, toDate, isWinterSeason } = require('../utils/time')
+const { distanceInMeters, distanceWithCoordTransform } = require('../utils/geo')
+const { resolveBusinessDate, formatDate, formatDateTime, toDate, isWinterSeason } = require('../utils/time')
 const { resolveCurrentPunchIndex, evaluateStatus, shouldReplace } = require('./ruleEngine')
 
 const TEST_MODE = process.env.TEST_MODE === 'true'
@@ -50,7 +50,7 @@ class AttendanceService {
       throw new AppError(errorCodes.INVALID_INPUT, '围栏未配置或不可用', 422)
     }
 
-    const distanceMeters = Math.round(distanceInMeters(payload.lat, payload.lng, fence.lat, fence.lng))
+    const distanceMeters = Math.round(distanceWithCoordTransform(payload.lat, payload.lng, fence.lat, fence.lng, 'WGS84'))
     if (distanceMeters > fence.radius) {
       throw new AppError(errorCodes.OUTSIDE_FENCE, '超出打卡范围', 422, { distanceMeters, radius: fence.radius, fence: fence.name })
     }
@@ -587,7 +587,7 @@ class AttendanceService {
         .map((item) => ({
           id: item.id,
           bizDate: item.biz_date,
-          punchedAt: item.punched_at,
+          punchedAt: formatDateTime(item.punched_at),
           punchType: this.resolvePunchType(item.punch_index),
           status: item.status,
           lateMinutes: Number(item.late_minutes || 0)
@@ -788,14 +788,15 @@ class AttendanceService {
     const nodes = rules.map((rule) => {
       const now = new Date()
       const effectiveStartTime = isWinterSeason(now) && rule.winter_start_time ? rule.winter_start_time : rule.start_time
+      const record = recordByIndex[rule.punch_index]
       return {
         punchIndex: rule.punch_index,
         startTime: effectiveStartTime,
         endTime: rule.end_time,
         winterStartTime: rule.winter_start_time,
-        checked: Boolean(recordByIndex[rule.punch_index]),
-        status: recordByIndex[rule.punch_index]?.status || 'PENDING',
-        punchedAt: recordByIndex[rule.punch_index]?.punched_at || null
+        checked: Boolean(record),
+        status: record?.status || 'PENDING',
+        punchedAt: record ? formatDateTime(record.punched_at) : null
       }
     })
     return {
@@ -827,7 +828,7 @@ class AttendanceService {
     if (!fence) {
       throw new AppError(errorCodes.INVALID_INPUT, '围栏未配置', 422)
     }
-    const distanceMeters = Math.round(distanceInMeters(payload.lat, payload.lng, fence.lat, fence.lng))
+    const distanceMeters = Math.round(distanceWithCoordTransform(payload.lat, payload.lng, fence.lat, fence.lng, 'WGS84'))
     const inside = distanceMeters <= fence.radius
     return {
       punchIndex,
@@ -847,7 +848,11 @@ class AttendanceService {
     const records = await this.repository.listUserCheckins(userId, limit || 30)
     return {
       userId,
-      records
+      records: records.map((item) => ({
+        ...item,
+        biz_date: formatDate(item.biz_date),
+        punched_at: formatDateTime(item.punched_at)
+      }))
     }
   }
 }

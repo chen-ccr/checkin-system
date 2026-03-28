@@ -14,6 +14,7 @@ const userForm = ref({ id: '', nickname: '', name: '', phone: '', departmentId: 
 const departmentForm = ref({ name: '' })
 const fenceForm = ref({ id: '', name: '', lat: '', lng: '', radius: '', isActive: true })
 const ruleForm = ref({ id: '', roleId: '', punchIndex: '', startTime: '', endTime: '', winterStartTime: '', requiredFenceId: '' })
+const ruleFilterRoleId = ref('')
 const activeTab = ref('dashboard')
 const loading = ref(false)
 const msg = ref('')
@@ -24,6 +25,9 @@ const ruleModalTitle = ref('新增班次')
 
 let fenceMap = null
 let fenceMarker = null
+let geolocation = null
+let placeSearch = null
+const searchKeyword = ref('')
 
 api.interceptors.request.use((config) => {
   if (token.value) {
@@ -33,6 +37,11 @@ api.interceptors.request.use((config) => {
 })
 
 const canManageAllDepartment = computed(() => profile.value?.role === 'SUPER_ADMIN')
+
+const filteredShiftRules = computed(() => {
+  if (!ruleFilterRoleId.value) return bootstrap.value.shiftRules
+  return bootstrap.value.shiftRules.filter(r => String(r.role_id) === ruleFilterRoleId.value)
+})
 
 async function login() {
   loading.value = true
@@ -62,7 +71,13 @@ function logout() {
 
 async function loadBootstrap() {
   const res = await api.get('/admin/bootstrap')
-  bootstrap.value = res.data.data
+  const data = res.data.data
+  Object.assign(bootstrap.value, {
+    departments: data.departments || [],
+    roles: data.roles || [],
+    geofences: data.geofences || [],
+    shiftRules: data.shiftRules || []
+  })
   if (!query.value.date) {
     query.value.date = new Date().toISOString().slice(0, 10)
   }
@@ -207,6 +222,7 @@ async function saveFence() {
     return
   }
 
+  const isUpdate = !!fenceForm.value.id
   const payload = {
     name: fenceForm.value.name,
     lat: Number(fenceForm.value.lat),
@@ -219,19 +235,23 @@ async function saveFence() {
     payload.id = fenceForm.value.id
   }
 
-  await api.post('/admin/geofences', payload)
-  msg.value = fenceForm.value.id ? '围栏更新成功' : '围栏新增成功'
-  clearFenceForm()
-  await loadBootstrap()
+  try {
+    await api.post('/admin/geofences', payload)
+    msg.value = isUpdate ? '围栏更新成功' : '围栏新增成功'
+    await loadBootstrap()
+    clearFenceForm()
+  } catch (err) {
+    msg.value = err.response?.data?.message || '保存失败'
+  }
 }
 
 function editFence(fence) {
   fenceForm.value = {
     id: fence.id,
     name: fence.name,
-    lat: fence.lat,
-    lng: fence.lng,
-    radius: fence.radius,
+    lat: String(fence.lat),
+    lng: String(fence.lng),
+    radius: String(fence.radius),
     isActive: Number(fence.is_active) === 1
   }
   updateFenceMap()
@@ -257,39 +277,36 @@ function clearFenceForm() {
   msg.value = ''
 }
 
+const mapLoading = ref(false)
+const mapError = ref('')
+
 function initFenceMap() {
-  console.log('initFenceMap called, fenceMap exists:', !!fenceMap)
-  console.log('window.AMap exists:', !!window.AMap)
-  console.log('fence-map element exists:', !!document.getElementById('fence-map'))
-
-  if (fenceMap) {
-    console.log('fenceMap already exists, skipping')
-    return
-  }
-
   let attempts = 0
-  const maxAttempts = 20
+  const maxAttempts = 30
 
   function tryInit() {
     attempts++
-    console.log(`initFenceMap attempt ${attempts}/${maxAttempts}`)
-
     const mapContainer = document.getElementById('fence-map')
     if (!mapContainer) {
-      console.log('fence-map container not found')
+      if (attempts < maxAttempts) {
+        setTimeout(tryInit, 300)
+      } else {
+        mapLoading.value = false
+        mapError.value = '地图容器未找到'
+      }
       return
     }
 
-    console.log('fence-map container size:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight)
-    console.log('fence-map container display:', window.getComputedStyle(mapContainer).display)
-    console.log('fence-map container visibility:', window.getComputedStyle(mapContainer).visibility)
-
     if (window.AMap && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
-      console.log('Initializing AMap...')
-
-      // 先清空容器
+      if (fenceMap) {
+        fenceMap.destroy()
+        fenceMap = null
+      }
+      
       mapContainer.innerHTML = ''
-
+      mapLoading.value = true
+      mapError.value = ''
+      
       fenceMap = new AMap.Map('fence-map', {
         zoom: 15,
         center: [115.89925, 28.68503],
@@ -299,27 +316,122 @@ function initFenceMap() {
       fenceMap.on('click', (e) => {
         const lng = e.lnglat.getLng()
         const lat = e.lnglat.getLat()
-        console.log('Map clicked:', lat, lng)
         fenceForm.value.lat = lat.toFixed(6)
         fenceForm.value.lng = lng.toFixed(6)
         updateFenceMap()
       })
 
-      updateFenceMap()
-      console.log('AMap initialized successfully')
-    } else if (attempts < maxAttempts) {
-      console.log('Conditions not met, retrying...', {
-        hasAMap: !!window.AMap,
-        width: mapContainer.offsetWidth,
-        height: mapContainer.offsetHeight
+      AMap.plugin(['AMap.Geolocation', 'AMap.CitySearch'], () => {
+        geolocation = new AMap.Geolocation({
+          enableHighAccuracy: true,
+          timeout: 10000,
+          showButton: true,
+          showMarker: true,
+          showCircle: true,
+          panToLocation: true,
+          zoomToAccuracy: true
+        })
+        fenceMap.addControl(geolocation)
+        
+        geolocation.getCurrentPosition((status, result) => {
+          mapLoading.value = false
+          if (status === 'complete') {
+            const lat = result.position.lat
+            const lng = result.position.lng
+            fenceMap.setCenter([lng, lat])
+            mapError.value = ''
+          } else {
+            const citySearch = new AMap.CitySearch()
+            citySearch.getLocalCity((status, result) => {
+              mapLoading.value = false
+              if (status === 'complete' && result.info === 'OK') {
+                fenceMap.setCenter(result.city.center)
+                mapError.value = '精确定位失败，已定位到所在城市'
+              } else {
+                mapError.value = '定位失败，请手动选择位置或搜索'
+              }
+            })
+          }
+        })
       })
-      setTimeout(tryInit, 500)
+
+      AMap.plugin('AMap.PlaceSearch', () => {
+        placeSearch = new AMap.PlaceSearch({
+          pageSize: 10,
+          pageIndex: 1,
+          extensions: 'all',
+          city: '全国'
+        })
+      })
+
+      updateFenceMap()
+      mapLoading.value = false
+    } else if (attempts < maxAttempts) {
+      setTimeout(tryInit, 300)
     } else {
-      console.error('Failed to initialize AMap after max attempts')
+      mapLoading.value = false
+      mapError.value = '地图加载超时，请刷新页面重试'
     }
   }
 
-  setTimeout(tryInit, 500)
+  if (fenceMap) {
+    fenceMap.destroy()
+    fenceMap = null
+  }
+  setTimeout(tryInit, 300)
+}
+
+function searchPlace() {
+  if (!searchKeyword.value) {
+    msg.value = '请输入搜索关键词'
+    return
+  }
+  if (!fenceMap) {
+    msg.value = '地图尚未加载完成'
+    return
+  }
+  
+  if (!placeSearch) {
+    AMap.plugin('AMap.PlaceSearch', () => {
+      placeSearch = new AMap.PlaceSearch({
+        pageSize: 10,
+        pageIndex: 1,
+        extensions: 'all',
+        city: '全国'
+      })
+      doSearch()
+    })
+  } else {
+    doSearch()
+  }
+}
+
+function doSearch() {
+  if (!placeSearch) {
+    msg.value = '搜索服务未就绪，请稍后重试'
+    return
+  }
+  msg.value = '搜索中...'
+  placeSearch.search(searchKeyword.value, (status, result) => {
+    msg.value = ''
+    if (status === 'complete' && result.poiList && result.poiList.pois.length > 0) {
+      const firstPoi = result.poiList.pois[0]
+      const lng = firstPoi.location.lng
+      const lat = firstPoi.location.lat
+      fenceForm.value.lat = lat.toFixed(6)
+      fenceForm.value.lng = lng.toFixed(6)
+      updateFenceMap()
+      setTimeout(() => {
+        if (fenceMap) {
+          fenceMap.setCenter([lng, lat])
+          fenceMap.setZoom(16)
+        }
+      }, 100)
+      msg.value = `已定位到: ${firstPoi.name}`
+    } else {
+      msg.value = '未找到相关位置，请尝试其他关键词'
+    }
+  })
 }
 
 function updateFenceMap() {
@@ -590,6 +702,10 @@ watch(activeTab, (newTab) => {
       <div class="card" v-if="activeTab === 'fences'">
         <h3>围栏配置</h3>
         <div class="row">
+          <input v-model="searchKeyword" placeholder="搜索地点（如：南昌市政府）" style="flex: 1" @keyup.enter="searchPlace" />
+          <button @click="searchPlace" style="background: #1677ff; color: white;">搜索</button>
+        </div>
+        <div class="row">
           <input v-model="fenceForm.name" placeholder="围栏名称" style="flex: 1" />
           <input v-model="fenceForm.lat" placeholder="纬度" style="width: 100px" />
           <input v-model="fenceForm.lng" placeholder="经度" style="width: 100px" />
@@ -598,8 +714,13 @@ watch(activeTab, (newTab) => {
           <button @click="saveFence">{{ fenceForm.id ? '更新' : '新增' }}</button>
           <button @click="clearFenceForm" style="background: #f0f0f0">清空</button>
         </div>
-        <p style="font-size: 12px; color: #666; margin: 8px 0;">💡 点击地图选择位置或手动输入经纬度</p>
-        <div id="fence-map" style="height: 300px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px;"></div>
+        <p style="font-size: 12px; color: #666; margin: 8px 0;">💡 搜索地点或点击地图选择位置，地图会自动定位到您的当前位置</p>
+        <div id="fence-map" style="height: 300px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; position: relative;">
+          <div v-if="mapLoading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666;">
+            地图加载中...
+          </div>
+        </div>
+        <p v-if="mapError" style="font-size: 12px; color: #dc2626; margin: 4px 0;">{{ mapError }}</p>
         <table>
           <thead>
             <tr><th>ID</th><th>名称</th><th>坐标</th><th>半径</th><th>状态</th><th>操作</th></tr>
@@ -623,8 +744,8 @@ watch(activeTab, (newTab) => {
       <div class="card" v-if="activeTab === 'rules'">
         <h3>班次规则配置</h3>
         <div class="row">
-          <select v-model="ruleForm.roleId">
-            <option value="" disabled>选择角色</option>
+          <select v-model="ruleFilterRoleId">
+            <option value="">全部角色</option>
             <option v-for="r in bootstrap.roles" :key="r.id" :value="String(r.id)">{{ r.name }}</option>
           </select>
           <button @click="openRuleModal()" style="background: #1677ff; color: white; margin-left: 8px;">新增班次</button>
@@ -634,7 +755,7 @@ watch(activeTab, (newTab) => {
             <tr><th>角色</th><th>节点</th><th>时段</th><th>冬季起始</th><th>指定围栏</th><th>操作</th></tr>
           </thead>
           <tbody>
-            <tr v-for="r in bootstrap.shiftRules" :key="r.id">
+            <tr v-for="r in filteredShiftRules" :key="r.id">
               <td>{{ r.role_name }}</td>
               <td>{{ r.punch_index }}</td>
               <td>{{ r.start_time }} - {{ r.end_time }}</td>
@@ -968,10 +1089,11 @@ watch(activeTab, (newTab) => {
   letter-spacing: 2px;
 }
 
-.page { max-width: 1200px; margin: 0 auto; padding: 20px; font-family: sans-serif; }
-.card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 16px; background: #fff; }
-.toolbar { display: flex; justify-content: space-between; margin-bottom: 12px; }
-.tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.page { width: 100%; min-height: 100vh; margin: 0 auto; padding: 20px; font-family: sans-serif; background: #f5f7fa; }
+.card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 16px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.toolbar { display: flex; justify-content: space-between; margin-bottom: 12px; align-items: center; }
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.tabs button { padding: 8px 12px; }
 .tabs button.active { background: #1677ff; color: #fff; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
 input, select, button { padding: 8px 10px; border-radius: 6px; border: 1px solid #d1d5db; }
@@ -991,4 +1113,22 @@ th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 1
 .form-row label { width: 90px; text-align: right; }
 .form-row input, .form-row select { flex: 1; }
 .modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+
+@media (max-width: 768px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .card { padding: 12px; }
+  .page { padding: 12px; }
+  table { font-size: 12px; }
+  th, td { padding: 6px 4px; }
+}
+
+@media (min-width: 1024px) {
+  .page { max-width: 1400px; padding: 24px 40px; }
+  .card { padding: 24px 32px; }
+  .tabs { gap: 12px; }
+  .tabs button { padding: 10px 20px; font-size: 15px; }
+  th, td { padding: 12px 16px; font-size: 14px; }
+  .metrics { gap: 16px; }
+  .metric { padding: 16px; }
+}
 </style>

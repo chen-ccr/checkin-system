@@ -1,33 +1,18 @@
 <!DOCTYPE html>
-<html>
-
-<script type="module" crossorigin src="/assets/index-FW36A_aC.js"></script>
-<link rel="stylesheet" crossorigin href="/assets/index-DsnipMYA.css">
-
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>考勤管理后台</title>
+  <script src="https://webapi.amap.com/maps?v=1.4.15&key=a9ba8d25e074429c7711ccad6cb05950&plugin=AMap.Geolocation,AMap.PlaceSearch,AMap.Autocomplete"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+  </style>
+  <script type="module" crossorigin src="/assets/index-DWJl82Le.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CSejM6lf.css">
+</head>
 <body>
-    <div id="app"></div>
-    <script src="https://webapi.amap.com/maps?v=2.0&key=a9ba8d25e074429c7711ccad6cb05950">
-        const map = new AMap.Map('map', {
-            zoom: 15,
-            center: [121.4737, 31.2304]
-        })
-
-        let marker
-
-        map.on('click', function (e) {
-            const { lng, lat } = e.lnglat
-
-            if (marker) map.remove(marker)
-
-            marker = new AMap.Marker({
-                position: [lng, lat]
-            })
-
-            map.add(marker)
-
-            selected = { lat, lng }
-        })
-    </script>
+  <div id="app"></div>
 </body>
-
 </html>

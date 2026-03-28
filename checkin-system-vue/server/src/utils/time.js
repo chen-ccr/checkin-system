@@ -1,5 +1,16 @@
 function toDate(input) {
   if (input instanceof Date) return input
+  if (typeof input === 'string') {
+    if (input.includes('T') && input.includes('Z')) {
+      const utcDate = new Date(input)
+      const offset = utcDate.getTimezoneOffset()
+      return new Date(utcDate.getTime() - offset * 60 * 1000)
+    }
+    if (input.includes('T')) {
+      return new Date(input)
+    }
+    return new Date(input)
+  }
   return new Date(input)
 }
 
@@ -40,10 +51,18 @@ function isWinterSeason(dateInput) {
   return false
 }
 
+function formatDateTime(date) {
+  if (!date) return ''
+  const d = toDate(date)
+  if (isNaN(d.getTime())) return String(date)
+  return `${formatDate(d)} ${formatTime(d)}`
+}
+
 module.exports = {
   toDate,
   formatDate,
   formatTime,
+  formatDateTime,
   combineDateTime,
   resolveBusinessDate,
   isWinterSeason

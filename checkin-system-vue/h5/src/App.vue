@@ -38,6 +38,17 @@ const selectedUser = ref(null)
 
 const OFFLINE_KEY = 'checkin_offline_queue'
 
+function translateStatus(status) {
+  const statusMap = {
+    'NORMAL': '正常',
+    'LATE': '迟到',
+    'PENDING': '待打卡',
+    'ABSENT': '缺卡',
+    'LEAVE': '请假'
+  }
+  return statusMap[status] || status
+}
+
 // 和admin一样，使用相对路径 /api/v1
 const api = axios.create({ baseURL: '/api/v1' })
 
@@ -99,7 +110,8 @@ const chartMax = computed(() => {
 })
 
 function barHeight(value) {
-  return `${Math.max(8, Math.round((Number(value || 0) / chartMax.value) * 140))}px`
+  if (!value || Number(value) === 0) return '4px'
+  return `${Math.max(8, Math.round((Number(value) / chartMax.value) * 140))}px`
 }
 
 async function ensureSummaryToken() {
@@ -380,7 +392,7 @@ async function handleCheckin() {
     }
     const res = await api.post('/checkins', payload)
     if (res.data.code === 'OK') {
-      msg.value = `${res.data.message}（第${res.data.data.punchIndex}节点，${res.data.data.status}）`
+      msg.value = `${res.data.message}（第${res.data.data.punchIndex}节点，${translateStatus(res.data.data.status)}）`
       await refreshAll()
     } else {
       msg.value = res.data.message || '打卡失败'
@@ -510,7 +522,7 @@ onUnmounted(() => {
             <li v-for="node in plan" :key="node.punchIndex" :class="{ done: node.checked, abnormal: node.status === 'LATE' }">
               <div class="row-main">
                 <span>第{{ node.punchIndex }}次 {{ node.startTime }}-{{ node.endTime }}</span>
-                <span class="badge" :class="{ late: node.status === 'LATE', pending: node.status === 'PENDING' }">{{ node.status }}</span>
+                <span class="badge" :class="{ late: node.status === 'LATE', pending: node.status === 'PENDING' }">{{ translateStatus(node.status) }}</span>
               </div>
               <div class="row-sub" v-if="node.punchedAt">打卡时间：{{ node.punchedAt }}</div>
             </li>
@@ -522,11 +534,11 @@ onUnmounted(() => {
           <ul>
             <li v-for="item in history" :key="item.id" :class="{ abnormal: item.status === 'LATE' }">
               <div class="row-main">
-                <span>{{ item.biz_date }} 第{{ item.punch_index }}次</span>
-                <span class="badge" :class="{ late: item.status === 'LATE' }">{{ item.status }}</span>
+                <span>{{ item.biz_date }} 第{{ item.punch_index }}次 {{ item.start_time && item.end_time ? item.start_time + '-' + item.end_time : '' }}</span>
+                <span class="badge" :class="{ late: item.status === 'LATE' }">{{ translateStatus(item.status) }}</span>
               </div>
               <div class="row-sub">
-                {{ item.punched_at }}
+                打卡时间：{{ item.punched_at }}
                 <span v-if="Number(item.is_offline) === 1"> · 离线上传</span>
                 <span v-if="item.fence_name"> · {{ item.fence_name }}</span>
               </div>
@@ -588,13 +600,15 @@ onUnmounted(() => {
               <div class="chart-area">
                 <div class="chart-list">
                   <div class="chart-item" v-for="item in summaryData.bars" :key="item.id">
-                    <div class="bar-values-top">
-                      <span>{{ item.expected }}</span>
-                      <span>{{ item.actual }}</span>
-                    </div>
                     <div class="bars">
-                      <div class="bar expected" :style="{ height: barHeight(item.expected) }"></div>
-                      <div class="bar actual" :style="{ height: barHeight(item.actual) }"></div>
+                      <div class="bar-wrapper">
+                        <span class="bar-value">{{ item.expected }}</span>
+                        <div class="bar expected" :style="{ height: barHeight(item.expected) }"></div>
+                      </div>
+                      <div class="bar-wrapper">
+                        <span class="bar-value">{{ item.actual }}</span>
+                        <div class="bar actual" :style="{ height: barHeight(item.actual) }"></div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -676,19 +690,20 @@ onUnmounted(() => {
 input, button { font-size: 14px; }
 input { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; }
 .chart-box { margin-top: 8px; padding-top: 12px; border-top: 1px dashed #e2e8f0; overflow-x: auto; }
-.chart-wrapper { display: flex; min-height: 200px; min-width: max-content; }
+.chart-wrapper { display: flex; min-height: 200px; }
 .y-axis { width: 35px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: #64748b; text-align: right; padding-right: 8px; border-right: 1px solid #cbd5e1; flex-shrink: 0; }
-.chart-area { flex: 1; display: flex; flex-direction: column; min-width: 500px; }
-.chart-list { flex: 1; display: flex; justify-content: space-around; align-items: flex-end; padding-bottom: 0; border-bottom: 1px solid #cbd5e1; min-height: 160px; }
-.chart-item { width: 72px; text-align: center; display: flex; flex-direction: column; align-items: center; }
-.bars { display: flex; justify-content: center; align-items: flex-end; gap: 4px; height: 140px; }
+.chart-area { flex: 1; display: flex; flex-direction: column; }
+.chart-list { flex: 1; display: flex; align-items: flex-end; padding-bottom: 0; border-bottom: 1px solid #cbd5e1; min-height: 160px; gap: 24px; padding: 0 12px; }
+.chart-item { width: 72px; text-align: center; display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.bars { display: flex; justify-content: center; align-items: flex-end; gap: 8px; height: 140px; }
+.bar-wrapper { display: flex; flex-direction: column; align-items: center; }
 .bar { width: 18px; border-radius: 6px 6px 0 0; }
+.bar-value { font-size: 10px; color: #475569; margin-bottom: 2px; min-height: 14px; }
 .bar.expected { background: #3b82f6; }
 .bar.actual { background: #22c55e; }
-.bar-values-top { display: flex; justify-content: center; gap: 4px; font-size: 10px; color: #475569; margin-bottom: 2px; }
-.x-axis { display: flex; justify-content: space-around; padding: 8px 0 4px; }
+.x-axis { display: flex; padding: 8px 12px 4px; gap: 24px; }
 .x-axis .chart-item { width: 72px; }
-.chart-label { font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart-label { font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
 .legend { display: flex; gap: 12px; margin-top: 8px; color: #475569; font-size: 12px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .dot.expected { background: #3b82f6; }
@@ -697,8 +712,9 @@ ul { margin: 0; padding-left: 0; list-style: none; }
 li { margin-bottom: 8px; line-height: 1.5; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; }
 li:last-child { margin-bottom: 0; border-bottom: 0; padding-bottom: 0; }
 .row-main { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.row-main > span:first-child { flex: 1; min-width: 0; }
 .row-sub { margin-top: 2px; font-size: 12px; color: #64748b; }
-.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; color: #334155; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; color: #334155; white-space: nowrap; flex-shrink: 0; }
 .badge.pending { background: #f1f5f9; color: #475569; }
 .badge.late { background: #ffedd5; color: #9a3412; }
 .click-row { cursor: pointer; }

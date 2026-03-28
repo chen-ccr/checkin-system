@@ -11,15 +11,50 @@ function toMinutes(timeText) {
 function resolveCurrentPunchIndex(rules, punchAt) {
   const timeText = formatTime(punchAt)
   const currentMinutes = toMinutes(timeText)
-  const matched = rules.find((rule) => {
+  
+  const sortedRules = [...rules].sort((a, b) => a.punch_index - b.punch_index)
+  
+  const inRangeRule = sortedRules.find((rule) => {
     const startMinutes = toMinutes(rule.start_time)
     const endMinutes = toMinutes(rule.end_time)
     return currentMinutes >= startMinutes && currentMinutes <= endMinutes
   })
-  if (!matched) {
-    throw new AppError(errorCodes.INVALID_INPUT, '当前时间不在任何有效打卡时段', 422)
+  if (inRangeRule) {
+    return inRangeRule.punch_index
   }
-  return matched.punch_index
+  
+  for (let i = 0; i < sortedRules.length; i++) {
+    const rule = sortedRules[i]
+    const startMinutes = toMinutes(rule.start_time)
+    const endMinutes = toMinutes(rule.end_time)
+    
+    if (rule.punch_index % 2 === 1) {
+      if (currentMinutes < startMinutes) {
+        return rule.punch_index
+      }
+    } else {
+      if (currentMinutes > endMinutes) {
+        if (i === sortedRules.length - 1) {
+          return rule.punch_index
+        }
+        const nextRule = sortedRules[i + 1]
+        const nextStartMinutes = toMinutes(nextRule.start_time)
+        if (currentMinutes < nextStartMinutes) {
+          return rule.punch_index
+        }
+      }
+    }
+  }
+  
+  for (let i = sortedRules.length - 1; i >= 0; i--) {
+    const rule = sortedRules[i]
+    const startMinutes = toMinutes(rule.start_time)
+    if (currentMinutes < startMinutes) {
+      return rule.punch_index
+    }
+  }
+  
+  throw new AppError(errorCodes.INVALID_INPUT, '当前时间不在任何有效打卡时段', 422)
 }
 
 function evaluateStatus(rule, bizDate, punchAt) {
