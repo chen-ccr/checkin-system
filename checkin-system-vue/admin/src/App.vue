@@ -313,7 +313,7 @@ function initFenceMap() {
         
         fenceMap = new AMap.Map('fence-map', {
           zoom: 15,
-          center: [115.89925, 28.68503],
+          center: [115.857733, 28.68852],
           resizeEnable: true
         })
 
@@ -325,7 +325,7 @@ function initFenceMap() {
           updateFenceMap()
         })
 
-        AMap.plugin(['AMap.PlaceSearch'], () => {
+        AMap.plugin('AMap.PlaceSearch', () => {
           placeSearch = new AMap.PlaceSearch({
             pageSize: 10,
             pageIndex: 1,
@@ -333,21 +333,23 @@ function initFenceMap() {
           })
         })
 
-        AMap.plugin('AMap.CitySearch', () => {
-          const citySearch = new AMap.CitySearch()
-          citySearch.getLocalCity((status, result) => {
-            if (status === 'complete' && result.info === 'OK') {
-              fenceMap.setCenter(result.city.center)
-              fenceMap.setZoom(12)
-              mapError.value = ''
-            } else {
-              mapError.value = '定位失败，请手动选择位置或搜索'
-            }
-            mapLoading.value = false
+        try {
+          AMap.plugin('AMap.CitySearch', () => {
+            const citySearch = new AMap.CitySearch()
+            citySearch.getLocalCity((status, result) => {
+              if (status === 'complete' && result && result.city) {
+                fenceMap.setCenter(result.city.center)
+                fenceMap.setZoom(12)
+              }
+            })
           })
-        })
+        } catch (e) {
+          console.warn('CitySearch 加载失败:', e)
+        }
 
         updateFenceMap()
+        mapLoading.value = false
+        mapError.value = ''
       } catch (e) {
         console.error('地图初始化失败:', e)
         mapLoading.value = false
