@@ -314,31 +314,46 @@ class AttendanceService {
     }
   }
 
+  isValidChinaPhone(phone) {
+    if (!phone) return false
+    const phoneStr = String(phone).trim()
+    return /^1[3-9]\d{9}$/.test(phoneStr)
+  }
+
   async autoCreateUser(payload) {
     const { userId, mobile, name, nickName } = payload
-    if (!mobile) {
-      throw new AppError(errorCodes.INVALID_INPUT, '手机号不能为空', 422)
-    }
     if (!userId) {
       throw new AppError(errorCodes.INVALID_INPUT, 'userId不能为空', 422)
     }
-    const existingByPhone = await this.repository.findUserByPhone(mobile)
-    if (existingByPhone) {
-      const dept = await this.repository.findDepartmentById(existingByPhone.department_id)
-      if (!existingByPhone.nickname && nickName) {
-        await this.repository.updateUserNickname(existingByPhone.id, nickName)
-        existingByPhone.nickname = nickName
+
+    let existingUser = null
+    const isValidMobile = this.isValidChinaPhone(mobile)
+
+    if (isValidMobile) {
+      existingUser = await this.repository.findUserByPhone(mobile)
+    }
+
+    if (!existingUser) {
+      existingUser = await this.repository.findUserById(userId)
+    }
+
+    if (existingUser) {
+      const dept = await this.repository.findDepartmentById(existingUser.department_id)
+      if (!existingUser.nickname && nickName) {
+        await this.repository.updateUserNickname(existingUser.id, nickName)
+        existingUser.nickname = nickName
       }
       return {
-        userId: existingByPhone.id,
-        name: existingByPhone.nickname || existingByPhone.name,
-        mobile: existingByPhone.phone,
-        departmentId: Number(existingByPhone.department_id),
+        userId: existingUser.id,
+        name: existingUser.nickname || existingUser.name,
+        mobile: existingUser.phone,
+        departmentId: Number(existingUser.department_id),
         departmentName: dept?.name || '未知',
-        roleId: Number(existingByPhone.role_id),
+        roleId: Number(existingUser.role_id),
         isNew: false
       }
     }
+
     const unknownDept = await this.repository.findDepartmentByName('未知')
     let departmentId
     if (unknownDept) {
